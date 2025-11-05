@@ -403,11 +403,11 @@
                                 descricao: String(prod['Descrição'] || `Produto ${productCode}`),
                                 fornecedor: String(prod['Nome do fornecedor'] || 'N/A'),
                                 codfor: String(prod['Fornecedor'] || 'N/A'),
-                1,
-                                dtCadastro: prod['Dt.Cadastro'] || null
-                            });
-                        }
-                    });
+                                // CORREÇÃO: Removido o '1,' que estava a causar o SyntaxError
+                                dtCadastro: prod['Dt.Cadastro'] || null
+                            });
+                        }
+                    });
                 }
 
                 const clientMap = new Map();
@@ -815,7 +815,7 @@
                         );
                     }
 
-E
+                    // CORREÇÃO: Removido o 'E' que estava a causar um SyntaxError
                     // SUCESSO!
                     statusText.innerHTML = `<p class="text-green-500">Sucesso! Dados do dashboard atualizados.</p>`;
                     progressBar.style.width = '100%';
