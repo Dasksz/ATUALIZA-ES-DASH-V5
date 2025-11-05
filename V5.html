@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Uploader de Dados do Dashboard</title>
+    <title>Admin - Uploader de Dados do Dashboard (V5 Corrigido)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 1. ADICIONADO: Biblioteca do Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -17,7 +17,7 @@
 </head>
 <body class="text-slate-800 flex items-center justify-center min-h-screen">
     <div class="text-center p-8 bg-white rounded-lg shadow-2xl max-w-lg w-full m-4 border border-slate-200">
-        <h1 class="text-2xl font-bold text-slate-900 mb-4">Uploader (Admin)</h1>
+        <h1 class="text-2xl font-bold text-slate-900 mb-4">Uploader (Admin) - V5 Corrigido</h1>
         <p class="text-slate-600 mb-6">Carregue os arquivos para enviar os dados ao Supabase. Esta página deve ser mantida em segredo.</p>
 
         <!-- 2. ADICIONADO: Campos de configuração do Supabase -->
@@ -71,6 +71,7 @@
 
     <!-- 
       4. INSERIDO: O "cérebro" da sua ferramenta (Web Worker).
+      (Sem alterações no worker)
     -->
     <script id="worker-script" type="text/worker-javascript">
         self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
@@ -171,6 +172,7 @@
 
         const processSalesData = (rawData, clientMap, productMasterMap, newRcaSupervisorMap) => {
             return rawData.map(rawRow => {
+                // As chaves no rawRow (ex: 'CODCLI') vêm do cabeçalho do Excel/CSV
                 const codCliStr = String(rawRow['CODCLI']).trim();
                 const clientInfo = clientMap.get(codCliStr) || {};
                 
@@ -268,23 +270,34 @@
                 // CORREÇÃO CRÍTICA: Mapeia todas as chaves para MINÚSCULAS 
                 // para corresponder ao esquema do PostgreSQL (que as converte automaticamente)
                 return {
-                    pedido: pedido, nome: vendorName, superv: supervisorName, produto: productCode,
-                    descricao: String(rawRow['DESCRICAO'] || ''), fornecedor: String(rawRow['FORNECEDOR'] || ''),
-                    observacaofor: String(rawRow['OBSERVACAOFOR'] || '').trim(), codfor: String(rawRow['CODFOR'] || '').trim(),
-                    codusur: codUsur, codcli: codCliStr, cliente_nome: clientInfo.nomeCliente || 'N/A',
-                    cidade: clientInfo.cidade || 'N/A', bairro: clientInfo.bairro || 'N/A',
+                    pedido: pedido,
+                    nome: vendorName,
+                    superv: supervisorName,
+                    produto: productCode,
+                    descricao: String(rawRow['DESCRICAO'] || ''),
+                    fornecedor: String(rawRow['FORNECEDOR'] || ''),
+                    observacaofor: String(rawRow['OBSERVACAOFOR'] || '').trim(),
+                    codfor: String(rawRow['CODFOR'] || '').trim(),
+                    codusur: codUsur,
+                    codcli: codCliStr,
+                    cliente_nome: clientInfo.nomeCliente || 'N/A',
+                    cidade: clientInfo.cidade || 'N/A',
+                    bairro: clientInfo.bairro || 'N/A',
                     qtvenda: qtVenda,
                     
                     // Valores ajustados e em minúsculas
                     vlvenda: isFaturamento ? vlVendaOriginal : 0,
                     vlbonific: isFaturamento ? vlBonificOriginal : (vlVendaOriginal + vlBonificOriginal),
                     totpesoliq: pesoOriginal, 
-                    dtped: dtPed, dtsaida: dtSaida,
+                    dtped: dtPed,
+                    dtsaida: dtSaida,
                     posicao: String(rawRow['POSICAO'] || ''),
                     estoqueunit: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
                     qtvenda_embalagem_master: isNaN(qtdeMaster) || qtdeMaster === 0 ? 0 : qtVenda / qtdeMaster,
                     tipovenda: tipoVenda,
-                    filial: filialValue 
+                    filial: filialValue,
+                    // Passa o CODSUPERVISOR para a regra do Tiago
+                    codsupervisor: codSupervisor
                 };
             });
         };
@@ -861,12 +874,37 @@
                             );
                             
                         } else if (task.type === 'jsonb') {
-                            // Envia JSONB (envio rápido)
+                            // ######################################################################
+                            // ## INÍCIO DA CORREÇÃO ##
+                            // Troca o 'upsert' por 'delete' + 'insert' para garantir a execução,
+                            // já que 'insert' e 'delete' estão a funcionar para as tabelas 'lote'.
+                            
+                            // 1. Apaga a linha antiga
+                            const { error: deleteError } = await supabaseClient
+                                .from(task.tableName)
+                                .delete()
+                                .eq('id', 1); // Apaga especificamente a linha com id 1
+                                
+                            if (deleteError) throw new Error(`Falha ao limpar ${task.tableName}: ${deleteError.message}`);
+                            
+                            // 2. Insere a nova linha com os dados
+                            // task.data já é { id: 1, data: [...], updated_at: "..." }
+                            const { error: insertError } = await supabaseClient
+                                .from(task.tableName)
+                                .insert(task.data); 
+
+                            if (insertError) throw new Error(`Falha ao inserir ${task.tableName}: ${insertError.message}`);
+                            
+                            // ## FIM DA CORREÇÃO ##
+
+                            /*
+                            // --- CÓDIGO ANTIGO QUE FALHAVA ---
                             const { error } = await supabaseClient
                                 .from(task.tableName)
                                 .upsert(task.data);
                             
                             if (error) throw new Error(`${task.tableName}: ${error.message}`);
+                            */
                             
                             // Atualiza a barra de progresso de uma vez
                             progressBar.style.width = `${taskProgress * 100}%`;
