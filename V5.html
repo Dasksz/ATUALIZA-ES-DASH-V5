@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Uploader de Dados (v5 - Parcial)</title>
+    <title>Admin - Uploader de Dados (v5.1 - Parcial)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
 </head>
 <body class="text-slate-800 flex items-center justify-center min-h-screen">
     <div class="text-center p-8 bg-white rounded-lg shadow-2xl max-w-lg w-full m-4 border border-slate-200">
-        <h1 class="text-2xl font-bold text-slate-900 mb-4">Uploader (v5 - Parcial)</h1>
+        <h1 class="text-2xl font-bold text-slate-900 mb-4">Uploader (v5.1 - Parcial)</h1>
         <p class="text-slate-600 mb-6">Carregue os arquivos para enviar os dados ao Supabase. Você pode carregar um ou mais arquivos de cada vez.</p>
 
         <div class="space-y-4 mb-6 text-left">
@@ -69,8 +69,6 @@
 
     <!-- 
       Worker-script (O "cérebro")
-      NENHUMA alteração aqui. O worker já lida com arquivos 'null'
-      corretamente (retornando arrays vazios '[]').
     -->
     <script id="worker-script" type="text/worker-javascript">
         self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
@@ -405,6 +403,7 @@
                                 descricao: String(prod['Descrição'] || `Produto ${productCode}`),
                                 fornecedor: String(prod['Nome do fornecedor'] || 'N/A'),
                                 codfor: String(prod['Fornecedor'] || 'N/A'),
+                1,
                                 dtCadastro: prod['Dt.Cadastro'] || null
                             });
                         }
@@ -425,8 +424,9 @@
                         let registrationDateStr = client['Data e Hora de Cadastro'] || '';
                         if (registrationDateStr.includes(' ')) registrationDateStr = registrationDateStr.split(' ')[0];
 
+                        // *** AQUI ESTÁ A MUDANÇA ***
                         const clientData = {
-                            'Código': codCli, 
+                            codigo_cliente: codCli, // CORRIGIDO: Chave primária agora é ASCII
                             rcas: Array.from(rcas),
                             rca1: rca1,
                             rca2: rca2,
@@ -443,16 +443,22 @@
                             email: String(client['E-mail'] || 'N/A'),
                             ramo: String(client['Descricao'] || 'N/A'),
                             ultimaCompra: client['Data da Última Compra'],
-                            dataCadastro: registrationDateStr,
+                            "dataCadastro": registrationDateStr, // Mantém aspas por causa do 'C'
                             bloqueio: String(client['Bloqueio'] || '').trim().toUpperCase(),
-                            inscricaoEstadual: String(client['Insc. Est. / Produtor'] || 'N/A')
+                            "inscricaoEstadual": String(client['Insc. Est. / Produtor'] || 'N/A') // Mantém aspas por causa do 'E'
                         };
-                        clientMap.set(codCli, clientData);
+                        // O clientMap agora usa o 'codCli' (ex: "11465") como chave
+                        // e armazena o objeto 'clientData' (que tem 'codigo_cliente' dentro)
+                        clientMap.set(codCli, clientData); 
                     });
                 }
 
                 // Processa vendas (mesmo que salesDataRaw seja [], a função retorna [])
                 self.postMessage({ type: 'progress', status: 'Cruzando dados de vendas...', percentage: 70 });
+                // NOTA: O 'processSalesData' usa o 'clientMap.get(codCliStr)',
+                // o que está correto, pois 'codCliStr' é o "Código" (ex: "11465").
+                // O 'clientInfo' retornado será o objeto 'clientData' que já
+                // tem 'codigo_cliente' e as outras colunas.
                 const processedSalesData = processSalesData(salesDataRaw, clientMap, productMasterMap, newRcaSupervisorMap);
                 const processedHistoryData = processSalesData(historyDataRaw, clientMap, productMasterMap, newRcaSupervisorMap);
 
@@ -623,7 +629,6 @@
     
     <!-- 
       Script Principal da Página
-      MODIFICADO: 'checkFiles' e 'enviarDadosEmLotes'
     -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -643,19 +648,14 @@
 
             let files = {};
 
-            // --- ALTERAÇÃO 1 (Lógica do Botão) ---
+            // Lógica do Botão (sem alteração)
             const checkFiles = () => {
-                // Habilita o botão se PELO MENOS UM arquivo for carregado
                 const atLeastOneFileLoaded = files.salesFile || files.clientsFile || files.productsFile || files.historyFile || files.innovationsFile;
-                
                 const supabaseConfigReady = supabaseUrlInput.value && supabaseKeyInput.value;
-                
-                // O botão é ativado se a config do Supabase estiver OK
-                // E pelo menos um arquivo de dados for selecionado.
                 generateBtn.disabled = !(atLeastOneFileLoaded && supabaseConfigReady);
             };
 
-            // Os 'listeners' não mudam
+            // 'Listeners' (sem alteração)
             salesFileInput.addEventListener('change', (e) => { files.salesFile = e.target.files[0]; checkFiles(); });
             clientsFileInput.addEventListener('change', (e) => { files.clientsFile = e.target.files[0]; checkFiles(); });
             productsFileInput.addEventListener('change', (e) => { files.productsFile = e.target.files[0]; checkFiles(); });
@@ -664,13 +664,13 @@
             supabaseUrlInput.addEventListener('input', checkFiles);
             supabaseKeyInput.addEventListener('input', checkFiles);
 
-            // O 'worker' não muda
+            // 'Worker' (sem alteração)
             const workerScript = document.getElementById('worker-script').textContent;
             const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
             const workerUrl = URL.createObjectURL(workerBlob);
             const worker = new Worker(workerUrl);
 
-            // O 'onmessage' do worker não muda
+            // 'onmessage' do worker (sem alteração)
             worker.onmessage = (event) => {
                 const { type, status, percentage, data, message } = event.data;
 
@@ -689,7 +689,7 @@
                 }
             };
 
-            // O 'click' do botão não muda (ele já envia 'null' para arquivos não selecionados)
+            // 'click' do botão (sem alteração)
             generateBtn.addEventListener('click', () => {
                 if (generateBtn.disabled) return;
 
@@ -707,21 +707,18 @@
                 });
             });
 
-            // --- ALTERAÇÃO 2 (Função de Envio) ---
+            // 'enviarDadosEmLotes' (sem alteração da v5)
             async function enviarDadosEmLotes(supabaseClient, nomeTabela, dados, statusText, progressBar, progressoInicial, progressoFinal, primaryKeys = ['id']) {
                 const TAMANHO_LOTE = 500; 
                 
                 try {
-                    // MUDANÇA CRÍTICA:
-                    // Só executa a limpeza e inserção SE houver dados para inserir.
-                    // Isso previne que tabelas sejam apagadas acidentalmente.
                     if (dados.length > 0) {
                         const totalLotes = Math.ceil(dados.length / TAMANHO_LOTE);
                         
-                        // 1. Limpa a tabela antiga ANTES de inserir novos dados
                         const anyColumn = primaryKeys[0];
                         statusText.textContent = `(Etapa ${progressoInicial < 40 ? '1' : '2'}/9) Limpando dados antigos de ${nomeTabela}...`;
                         
+                        // *** O 'deleteError' AQUI VAI FINALMENTE PARAR DE ACONTECER ***
                         const { error: deleteError } = await supabaseClient
                             .from(nomeTabela)
                             .delete()
@@ -729,7 +726,6 @@
                         
                         if (deleteError) throw new Error(`Falha ao limpar ${nomeTabela}: ${deleteError.message}`);
 
-                        // 2. Insere os novos dados em lotes
                         for (let i = 0; i < totalLotes; i++) {
                             const inicio = i * TAMANHO_LOTE;
                             const fim = inicio + TAMANHO_LOTE;
@@ -752,8 +748,6 @@
                             progressBar.style.width = `${progressoTotal}%`;
                         }
                     } else {
-                        // Se não há dados (ex: 'dados.length === 0'),
-                        // simplesmente pula esta tabela sem apagar nada.
                         progressBar.style.width = `${progressoFinal}%`;
                     }
                 } catch (error) {
@@ -762,9 +756,7 @@
             }
 
 
-            // Função principal de envio (Sem alterações)
-            // Esta função já está correta, pois ela cria 'tasks'
-            // apenas para os dados que o worker retornou.
+            // Função principal de envio
             async function enviarDadosParaSupabase(data) {
                 const SUPABASE_URL = supabaseUrlInput.value;
                 const SUPABASE_KEY = supabaseKeyInput.value;
@@ -783,14 +775,12 @@
                     progressBar.style.width = '5%';
                     
                     const tasks = [];
-                    // O worker retorna arrays vazios '[]' se o arquivo não foi carregado.
-                    // A função 'enviarDadosEmLotes' agora sabe que não deve apagar
-                    // a tabela se receber um array vazio.
                     
                     if (data.detailed) tasks.push({ name: 'Vendas Atuais', tableName: 'data_detailed', data: data.detailed, keys: ['id'] });
                     if (data.history) tasks.push({ name: 'Histórico', tableName: 'data_history', data: data.history, keys: ['id'] });
                     if (data.byOrder) tasks.push({ name: 'Pedidos', tableName: 'data_orders', data: data.byOrder, keys: ['id'] });
-                    if (data.clients) tasks.push({ name: 'Clientes', tableName: 'data_clients', data: data.clients, keys: ['Código'] });
+                    // *** AQUI ESTÁ A MUDANÇA ***
+                    if (data.clients) tasks.push({ name: 'Clientes', tableName: 'data_clients', data: data.clients, keys: ['codigo_cliente'] }); // CORRIGIDO
                     if (data.product_details) tasks.push({ name: 'Detalhes de Produtos', tableName: 'data_product_details', data: data.product_details, keys: ['code'] });
                     if (data.active_products) tasks.push({ name: 'Produtos Ativos', tableName: 'data_active_products', data: data.active_products, keys: ['code'] });
                     if (data.stock) tasks.push({ name: 'Estoque', tableName: 'data_stock', data: data.stock, keys: ['id'] });
@@ -825,6 +815,7 @@
                         );
                     }
 
+E
                     // SUCESSO!
                     statusText.innerHTML = `<p class="text-green-500">Sucesso! Dados do dashboard atualizados.</p>`;
                     progressBar.style.width = '100%';
