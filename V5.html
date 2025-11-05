@@ -369,21 +369,29 @@
 
                 self.postMessage({ type: 'progress', status: 'Mapeando produtos...', percentage: 30 });
                 const productMasterMap = new Map();
+                // MODIFICADO: Renomeado para clareza
                 const productDetailsMap = new Map();
+                // MODIFICADO: Novo Set para a tabela data_active_products
+                const activeProductCodesFromCadastro = new Set();
+
                 productsDataRaw.forEach(prod => {
                     const productCode = String(prod['Código'] || '').trim();
                     if (!productCode) return;
+                    // MODIFICADO: Adiciona ao Set
+                    activeProductCodesFromCadastro.add(productCode);
+
                     let qtdeMaster = parseInt(prod['Qtde embalagem master(Compra)'], 10);
                     if (isNaN(qtdeMaster) || qtdeMaster <= 0) qtdeMaster = 1;
                     productMasterMap.set(productCode, qtdeMaster);
                     if (!productDetailsMap.has(productCode)) {
                         productDetailsMap.set(productCode, {
-                            codigo: productCode, // Adicionado para a tabela
+                            // MODIFICADO: 'codigo' -> 'code' para corresponder ao SQL
+                            code: productCode, 
                             descricao: String(prod['Descrição'] || `Produto ${productCode}`),
                             fornecedor: String(prod['Nome do fornecedor'] || 'N/A'),
                             codfor: String(prod['Fornecedor'] || 'N/A'),
-                            dtCadastro: prod['Dt.Cadastro'] || null,
-                            qtde_master: qtdeMaster // Adicionado para a tabela
+                            dtCadastro: prod['Dt.Cadastro'] || null
+                            // MODIFICADO: Removido qtde_master, não está no SQL v4
                         });
                     }
                 });
@@ -539,33 +547,51 @@
                 // data_clients (Array de objetos)
                 const finalClientsData = Array.from(clientMap.values());
 
-                // data_products (Array de objetos)
-                const finalProductsData = Array.from(productDetailsMap.values());
+                // data_product_details (Array de objetos)
+                // MODIFICADO: 'codigo' já foi corrigido para 'code' quando o map foi criado
+                const finalProductDetailsData = Array.from(productDetailsMap.values());
+
+                // data_active_products (Array de objetos)
+                // MODIFICADO: Cria a lista para a nova tabela
+                const finalActiveProductsData = Array.from(activeProductCodesFromCadastro).map(code => ({ code: code }));
 
                 // data_stock (Array de objetos)
+                // MODIFICADO: Converte de formato "largo" (wide) para "longo"
                 const finalStockData = [];
                 allProductCodesInStock.forEach(code => {
+                    // Adiciona a linha para a filial 05
                     finalStockData.push({
-                        cod_produto: code,
-                        estoque_05: stockMap05.get(code) || 0,
-                        estoque_08: stockMap08.get(code) || 0
+                        product_code: code,
+                        filial: "05",
+                        stock_qty: stockMap05.get(code) || 0
+                    });
+                    // Adiciona a linha para a filial 08
+                    finalStockData.push({
+                        product_code: code,
+                        filial: "08",
+                        stock_qty: stockMap08.get(code) || 0
                     });
                 });
 
                 // data_metadata (Array de objetos)
-                const finalMetadata = [{
-                    id: 1,
-                    passed_working_days: passedWorkingDaysCurrentMonth,
-                    updated_at: new Date().toISOString()
-                }];
+                // MODIFICADO: Converte para formato key/value
+                const finalMetadata = [
+                    {
+                        key: "passed_working_days",
+                        value: String(passedWorkingDaysCurrentMonth)
+                    },
+                    {
+                        key: "last_update",
+                        value: new Date().toISOString()
+                    }
+                ];
                 
                 // data_innovations (Array de objetos)
-                // O 'innovationsDataRaw' já está no formato de array de objetos correto
-                // Apenas garante que as chaves correspondam ao SQL (case-sensitive)
+                // MODIFICADO: Converte chaves para minúsculas para corresponder ao SQL
                 const finalInnovationsData = innovationsDataRaw.map(item => ({
-                    "Inovacoes": item.Inovacoes,
-                    "Codigo": item.Codigo,
-                    "Produto": item.Produto
+                    inovacoes: item.Inovacoes, // Chave SQL (minúscula)
+                    codigo: item.Codigo,      // Chave SQL (minúscula)
+                    produto: item.Produto     // Chave SQL (minúscula)
                 }));
 
 
@@ -581,10 +607,11 @@
                         
                         // NOVOS: Tabelas de suporte (agora também arrays de linhas)
                         clients: finalClientsData,
-                        products: finalProductsData,
-                        stock: finalStockData,
-                        innovations: finalInnovationsData,
-                        metadata: finalMetadata
+                        product_details: finalProductDetailsData, // MODIFICADO: Nome da variável
+                        active_products: finalActiveProductsData, // MODIFICADO: Novo
+                        stock: finalStockData,                  // MODIFICADO: Novo formato
+                        innovations: finalInnovationsData,        // MODIFICADO: Chaves minúsculas
+                        metadata: finalMetadata                   // MODIFICADO: Novo formato
                     }
                 });
 
@@ -684,7 +711,7 @@
                     // Para tabelas com chaves primárias de texto, usamos a primeira chave.
                     const anyColumn = primaryKeys[0];
                     
-                    statusText.textContent = `(Etapa ${progressoInicial < 40 ? '1' : '2'}/8) Limpando dados antigos de ${nomeTabela}...`;
+                    statusText.textContent = `(Etapa ${progressoInicial < 40 ? '1' : '2'}/9) Limpando dados antigos de ${nomeTabela}...`;
                     const { error: deleteError } = await supabaseClient
                         .from(nomeTabela)
                         .delete()
@@ -744,16 +771,18 @@
                     statusText.textContent = 'Conectado! Verificando dados para enviar...';
                     progressBar.style.width = '5%';
                     
-                    // --- INÍCIO DA MODIFICAÇÃO: Todas as 8 tarefas são 'lote' ---
+                    // --- INÍCIO DA MODIFICAÇÃO: Todas as 9 tarefas são 'lote' ---
                     const tasks = [];
                     if (data.detailed) tasks.push({ name: 'Vendas Atuais', tableName: 'data_detailed', data: data.detailed, keys: ['id'] });
                     if (data.history) tasks.push({ name: 'Histórico', tableName: 'data_history', data: data.history, keys: ['id'] });
                     if (data.byOrder) tasks.push({ name: 'Pedidos', tableName: 'data_orders', data: data.byOrder, keys: ['id'] });
                     if (data.clients) tasks.push({ name: 'Clientes', tableName: 'data_clients', data: data.clients, keys: ['Código'] });
-                    if (data.products) tasks.push({ name: 'Produtos', tableName: 'data_products', data: data.products, keys: ['codigo'] });
-                    if (data.stock) tasks.push({ name: 'Estoque', tableName: 'data_stock', data: data.stock, keys: ['cod_produto'] });
-                    if (data.innovations) tasks.push({ name: 'Inovações', tableName: 'data_innovations', data: data.innovations, keys: ['Inovacoes', 'Codigo', 'Produto'] });
-                    if (data.metadata) tasks.push({ name: 'Metadados', tableName: 'data_metadata', data: data.metadata, keys: ['id'] });
+                    // MODIFICADO: Nomes das tabelas e chaves primárias atualizados
+                    if (data.product_details) tasks.push({ name: 'Detalhes de Produtos', tableName: 'data_product_details', data: data.product_details, keys: ['code'] });
+                    if (data.active_products) tasks.push({ name: 'Produtos Ativos', tableName: 'data_active_products', data: data.active_products, keys: ['code'] });
+                    if (data.stock) tasks.push({ name: 'Estoque', tableName: 'data_stock', data: data.stock, keys: ['id'] }); // Usa 'id' (bigserial)
+                    if (data.innovations) tasks.push({ name: 'Inovações', tableName: 'data_innovations', data: data.innovations, keys: ['id'] }); // Usa 'id' (bigserial)
+                    if (data.metadata) tasks.push({ name: 'Metadados', tableName: 'data_metadata', data: data.metadata, keys: ['key'] });
 
                     if (tasks.length === 0) {
                         statusText.innerHTML = `<p class="text-yellow-500">Nenhum dado novo foi processado.</p>`;
