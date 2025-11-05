@@ -631,7 +631,8 @@
             let files = {};
 
             const checkFiles = () => {
-                const allFilesLoaded = files.salesFile && files.clientsFile && files.productsFile && files.historyFile && files.innovationsFile;
+                // MODIFICADO: Habilita o botão se PELO MENOS UM arquivo estiver carregado
+                const allFilesLoaded = files.salesFile || files.clientsFile || files.productsFile || files.historyFile || files.innovationsFile;
                 const supabaseConfigReady = supabaseUrlInput.value && supabaseKeyInput.value;
                 generateBtn.disabled = !(allFilesLoaded && supabaseConfigReady);
             };
@@ -676,16 +677,63 @@
                 statusText.textContent = 'A iniciar o processamento...';
                 progressBar.style.width = '0%';
 
+                // MODIFICADO: Envia os arquivos que existem, ou 'null' se não existirem
                 worker.postMessage({
-                    salesFile: files.salesFile,
-                    clientsFile: files.clientsFile,
-                    productsFile: files.productsFile,
-                    historyFile: files.historyFile,
-                    innovationsFile: files.innovationsFile
+                    salesFile: files.salesFile || null,
+                    clientsFile: files.clientsFile || null,
+                    productsFile: files.productsFile || null,
+                    historyFile: files.historyFile || null,
+                    innovationsFile: files.innovationsFile || null
                 });
             });
 
-            // 5. MODIFICADO: Nova função para enviar dados em partes (evita timeout)
+            // 5. NOVO: Helper para enviar dados grandes em lotes
+            async function enviarDadosEmLotes(supabaseClient, nomeTabela, dados, statusText, progressBar, progressoInicial, progressoFinal) {
+                const TAMANHO_LOTE = 500; // Define o tamanho de cada "pacote"
+                const totalLotes = Math.ceil(dados.length / TAMANHO_LOTE);
+
+                try {
+                    // Limpa a tabela antiga ANTES de inserir novos dados
+                    statusText.textContent = `(Etapa ${progressoInicial < 40 ? '1' : '2'}/8) Limpando dados antigos de ${nomeTabela}...`;
+                    const { error: deleteError } = await supabaseClient
+                        .from(nomeTabela)
+                        .delete()
+                        .neq('id', -1); // Exclui todas as linhas (onde ID não é -1, ou seja, todas)
+                    
+                    if (deleteError) throw new Error(`Falha ao limpar ${nomeTabela}: ${deleteError.message}`);
+
+                    // Insere os novos dados em lotes
+                    for (let i = 0; i < totalLotes; i++) {
+                        const inicio = i * TAMANHO_LOTE;
+                        const fim = inicio + TAMANHO_LOTE;
+                        const lote = dados.slice(inicio, fim);
+
+                        // Atualiza o status para o lote atual
+                        const statusMsg = `(Etapa ${progressoInicial < 40 ? '1' : '2'}/8) Enviando ${nomeTabela} (Lote ${i + 1}/${totalLotes})...`;
+                        statusText.textContent = statusMsg;
+
+                        const { error: insertError } = await supabaseClient
+                            .from(nomeTabela)
+                            .insert(lote);
+
+                        if (insertError) {
+                            console.error(`Erro no lote ${i+1} de ${nomeTabela}:`, insertError);
+                            throw new Error(`Erro ao inserir ${nomeTabela} (Lote ${i + 1}): ${insertError.message}`);
+                        }
+
+                        // Atualiza a barra de progresso
+                        const progressoLote = (i + 1) / totalLotes;
+                        const progressoTotal = progressoInicial + (progressoLote * (progressoFinal - progressoInicial));
+                        progressBar.style.width = `${progressoTotal}%`;
+                    }
+                } catch (error) {
+                    // Se falhar, re-lança o erro para ser pego pela função principal
+                    throw error;
+                }
+            }
+
+
+            // 6. MODIFICADO: Função principal de envio atualizada para enviar SELETIVAMENTE
             async function enviarDadosParaSupabase(data) {
                 const SUPABASE_URL = supabaseUrlInput.value;
                 const SUPABASE_KEY = supabaseKeyInput.value;
@@ -701,92 +749,143 @@
                     const { createClient } = supabase; // Usa a biblioteca global do Supabase
                     const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-                    statusText.textContent = 'Conectado! (1/8) Enviando Vendas Atuais...';
-                    progressBar.style.width = '12%';
+                    statusText.textContent = 'Conectado! Verificando dados para enviar...';
+                    progressBar.style.width = '5%';
                     const now = new Date().toISOString();
 
-                    // 1. Vendas Detalhadas (O maior)
-                    const { error: detailedError } = await supabaseClient
-                        .from('data_detailed')
-                        .upsert({ id: 1, data: data.detailed, updated_at: now });
-                    if (detailedError) throw new Error(`data_detailed: ${detailedError.message}`);
+                    // --- INÍCIO DA MODIFICAÇÃO: Lógica de Envio Seletivo ---
+
+                    // 1. Monta uma lista de tarefas (o que realmente precisamos enviar)
+                    const tasks = [];
+                    if (data.detailed && data.detailed.length > 0) {
+                        tasks.push({ 
+                            name: 'Vendas Atuais', 
+                            tableName: 'data_detailed', 
+                            data: data.detailed, 
+                            type: 'lote' 
+                        });
+                    }
+                    if (data.history && data.history.length > 0) {
+                        tasks.push({ 
+                            name: 'Histórico', 
+                            tableName: 'data_history', 
+                            data: data.history, 
+                            type: 'lote' 
+                        });
+                    }
+                    if (data.clients && data.clients.length > 0) {
+                        tasks.push({ 
+                            name: 'Clientes', 
+                            tableName: 'data_clients', 
+                            data: { id: 1, data: data.clients, updated_at: now }, 
+                            type: 'jsonb' 
+                        });
+                    }
+                    if (data.byOrder && data.byOrder.length > 0) {
+                        tasks.push({ 
+                            name: 'Pedidos', 
+                            tableName: 'data_orders', 
+                            data: { id: 1, data: data.byOrder, updated_at: now }, 
+                            type: 'jsonb' 
+                        });
+                    }
+                    if (data.activeProductCodes && data.activeProductCodes.length > 0) {
+                        // O 'productDetails' pode estar vazio, mas 'activeProductCodes' não
+                        const productData = {
+                            activeProductCodes: data.activeProductCodes,
+                            productDetails: data.productDetails
+                        };
+                        tasks.push({ 
+                            name: 'Produtos', 
+                            tableName: 'data_products', 
+                            data: { id: 1, data: productData, updated_at: now }, 
+                            type: 'jsonb' 
+                        });
+                    }
+                    if (data.stockMap05 || data.stockMap08) {
+                        // Verifica se os objetos de estoque não estão vazios
+                        if (Object.keys(data.stockMap05).length > 0 || Object.keys(data.stockMap08).length > 0) {
+                             const stockData = {
+                                stockMap05: data.stockMap05,
+                                stockMap08: data.stockMap08
+                            };
+                            tasks.push({ 
+                                name: 'Estoque', 
+                                tableName: 'data_stock', 
+                                data: { id: 1, data: stockData, updated_at: now }, 
+                                type: 'jsonb' 
+                            });
+                        }
+                    }
+                    if (data.innovationsMonth && data.innovationsMonth.length > 0) {
+                        tasks.push({ 
+                            name: 'Inovações', 
+                            tableName: 'data_innovations', 
+                            data: { id: 1, data: data.innovationsMonth, updated_at: now }, 
+                            type: 'jsonb' 
+                        });
+                    }
+                    if (data.passedWorkingDaysCurrentMonth) {
+                         const metadata = {
+                            passedWorkingDaysCurrentMonth: data.passedWorkingDaysCurrentMonth
+                        };
+                        tasks.push({ 
+                            name: 'Metadados', 
+                            tableName: 'data_metadata', 
+                            data: { id: 1, data: metadata, updated_at: now }, 
+                            type: 'jsonb' 
+                        });
+                    }
+
+                    // 2. Verifica se há algo para fazer
+                    if (tasks.length === 0) {
+                        statusText.innerHTML = `<p class="text-yellow-500">Nenhum dado novo foi processado. Verifique os arquivos carregados.</p>`;
+                        progressBar.style.width = '0%';
+                        generateBtn.disabled = false;
+                        return;
+                    }
+
+                    const totalTasks = tasks.length;
                     
-                    statusText.textContent = 'OK! (2/8) Enviando Histórico...';
-                    progressBar.style.width = '25%';
+                    // 3. Executa as tarefas em loop
+                    for (let i = 0; i < totalTasks; i++) {
+                        const task = tasks[i];
+                        const taskProgress = ((i + 1) / totalTasks); // Progresso de 0 a 1
 
-                    // 2. Histórico (O segundo maior)
-                    const { error: historyError } = await supabaseClient
-                        .from('data_history')
-                        .upsert({ id: 1, data: data.history, updated_at: now });
-                    if (historyError) throw new Error(`data_history: ${historyError.message}`);
-                    
-                    statusText.textContent = 'OK! (3/8) Enviando Clientes...';
-                    progressBar.style.width = '37%';
+                        statusText.textContent = `Enviando (${i + 1}/${totalTasks}): ${task.name}...`;
 
-                    // 3. Clientes (O terceiro maior)
-                    const { error: clientsError } = await supabaseClient
-                        .from('data_clients')
-                        .upsert({ id: 1, data: data.clients, updated_at: now });
-                    if (clientsError) throw new Error(`data_clients: ${clientsError.message}`);
+                        if (task.type === 'lote') {
+                            // Envia em lotes (usando o progresso dinâmico)
+                            const progressoInicial = (i / totalTasks) * 100;
+                            const progressoFinal = taskProgress * 100;
 
-                    statusText.textContent = 'OK! (4/8) Enviando Pedidos...';
-                    progressBar.style.width = '50%';
+                            await enviarDadosEmLotes(
+                                supabaseClient,
+                                task.tableName,
+                                task.data,
+                                statusText,
+                                progressBar,
+                                progressoInicial,
+                                progressoFinal
+                            );
+                            
+                        } else if (task.type === 'jsonb') {
+                            // Envia JSONB (envio rápido)
+                            const { error } = await supabaseClient
+                                .from(task.tableName)
+                                .upsert(task.data);
+                            
+                            if (error) throw new Error(`${task.tableName}: ${error.message}`);
+                            
+                            // Atualiza a barra de progresso de uma vez
+                            progressBar.style.width = `${taskProgress * 100}%`;
+                        }
+                    }
 
-                    // 4. Pedidos Agregados
-                    const { error: ordersError } = await supabaseClient
-                        .from('data_orders')
-                        .upsert({ id: 1, data: data.byOrder, updated_at: now });
-                    if (ordersError) throw new Error(`data_orders: ${ordersError.message}`);
-
-                    statusText.textContent = 'OK! (5/8) Enviando Produtos...';
-                    progressBar.style.width = '62%';
-
-                    // 5. Produtos (Combinados)
-                    const productData = {
-                        activeProductCodes: data.activeProductCodes,
-                        productDetails: data.productDetails
-                    };
-                    const { error: productsError } = await supabaseClient
-                        .from('data_products')
-                        .upsert({ id: 1, data: productData, updated_at: now });
-                    if (productsError) throw new Error(`data_products: ${productsError.message}`);
-
-                    statusText.textContent = 'OK! (6/8) Enviando Estoque...';
-                    progressBar.style.width = '75%';
-
-                    // 6. Estoque (Combinados)
-                    const stockData = {
-                        stockMap05: data.stockMap05,
-                        stockMap08: data.stockMap08
-                    };
-                    const { error: stockError } = await supabaseClient
-                        .from('data_stock')
-                        .upsert({ id: 1, data: stockData, updated_at: now });
-                    if (stockError) throw new Error(`data_stock: ${stockError.message}`);
-                    
-                    statusText.textContent = 'OK! (7/8) Enviando Inovações...';
-                    progressBar.style.width = '87%';
-
-                    // 7. Inovações
-                    const { error: innovationsError } = await supabaseClient
-                        .from('data_innovations')
-                        .upsert({ id: 1, data: data.innovationsMonth, updated_at: now });
-                    if (innovationsError) throw new Error(`data_innovations: ${innovationsError.message}`);
-
-                    statusText.textContent = 'OK! (8/8) Enviando Metadados...';
-                    progressBar.style.width = '95%';
-
-                    // 8. Metadados
-                    const metadata = {
-                        passedWorkingDaysCurrentMonth: data.passedWorkingDaysCurrentMonth
-                    };
-                    const { error: metaError } = await supabaseClient
-                        .from('data_metadata')
-                        .upsert({ id: 1, data: metadata, updated_at: now });
-                    if (metaError) throw new Error(`data_metadata: ${metaError.message}`);
+                    // --- FIM DA MODIFICAÇÃO ---
 
                     // SUCESSO!
-                    statusText.innerHTML = `<p class="text-green-500">Sucesso! Dados do dashboard atualizados (8/8).</p>`;
+                    statusText.innerHTML = `<p class="text-green-500">Sucesso! Dados do dashboard atualizados (${totalTasks} tabelas).</p>`;
                     progressBar.style.width = '100%';
                     generateBtn.disabled = false;
                     
