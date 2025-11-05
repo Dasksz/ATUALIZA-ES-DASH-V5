@@ -70,9 +70,7 @@
     </div>
 
     <!-- 
-      4. INSERIDO: O "cérebro" da sua ferramenta. 
-      Este é o Web Worker do seu arquivo original, copiado exatamente como estava.
-      Ele é responsável por ler e processar as planilhas.
+      4. INSERIDO: O "cérebro" da sua ferramenta (Web Worker).
     -->
     <script id="worker-script" type="text/worker-javascript">
         self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
@@ -176,7 +174,7 @@
                 const codCliStr = String(rawRow['CODCLI']).trim();
                 const clientInfo = clientMap.get(codCliStr) || {};
                 
-                // --- INÍCIO DA MODIFICAÇÃO: LÓGICA DE ATRIBUIÇÃO DE VENDEDOR ---
+                // LÓGICA DE ATRIBUIÇÃO DE VENDEDOR (inalterada)
                 
                 // 1. Pega os valores padrão da linha de venda
                 let vendorName = String(rawRow['NOME'] || '');
@@ -186,7 +184,7 @@
                 const pedido = String(rawRow['PEDIDO'] || '');
                 let isAmericanas = false;
 
-                // 2. Regra de Prioridade 1: AMERICANAS S.A (Como estava antes)
+                // 2. Regra de Prioridade 1: AMERICANAS S.A 
                 const nomeClienteParaLogica = (clientInfo.razaoSocial || clientInfo.fantasia || clientInfo.nomeCliente || '').toUpperCase();
                 if (nomeClienteParaLogica.includes('AMERICANAS S.A')) {
                     vendorName = 'AMERICANAS';
@@ -240,7 +238,7 @@
                         codUsur = codUsurVenda;
                     }
                 }
-                // --- FIM DA MODIFICAÇÃO ---
+                // FIM DA LÓGICA DE ATRIBUIÇÃO DE VENDEDOR
 
                 const supervisorUpper = (supervisorName || '').trim().toUpperCase();
                 if (supervisorUpper === 'BALCAO' || supervisorUpper === 'BALCÃO') supervisorName = 'BALCAO';
@@ -256,49 +254,37 @@
                 const qtdeMaster = productMasterMap.get(productCode) || 1;
                 const qtVenda = parseInt(String(rawRow['QTVENDA'] || '0').trim(), 10) || 0;
 
-                // --- INÍCIO DA MODIFICAÇÃO: REGRA TIPOVENDA ---
-                // Captura o tipo de venda primeiro
+                // REGRA TIPOVENDA (inalterada)
                 const tipoVenda = String(rawRow['TIPOVENDA'] || 'N/A').trim();
-                
-                // Apenas TIPOVENDA '1' e '9' contam para faturamento e peso
                 const isFaturamento = (tipoVenda === '1' || tipoVenda === '9');
-                
-                // Captura os valores originais
                 const vlVendaOriginal = parseBrazilianNumber(rawRow['VLVENDA']);
                 const vlBonificOriginal = parseBrazilianNumber(rawRow['VLBONIFIC']);
                 const pesoOriginal = parseBrazilianNumber(rawRow['TOTPESOLIQ']);
-                // --- FIM DA MODIFICAÇÃO ---
 
                 let filialValue = String(rawRow['FILIAL'] || '').trim();
                 if (filialValue === '5') filialValue = '05';
                 if (filialValue === '8') filialValue = '08';
 
+                // CORREÇÃO CRÍTICA: Mapeia todas as chaves para MINÚSCULAS 
+                // para corresponder ao esquema do PostgreSQL (que as converte automaticamente)
                 return {
-                    PEDIDO: pedido, NOME: vendorName, SUPERV: supervisorName, PRODUTO: productCode,
-                    DESCRICAO: String(rawRow['DESCRICAO'] || ''), FORNECEDOR: String(rawRow['FORNECEDOR'] || ''),
-                    OBSERVACAOFOR: String(rawRow['OBSERVACAOFOR'] || '').trim(), CODFOR: String(rawRow['CODFOR'] || '').trim(),
-                    CODUSUR: codUsur, CODCLI: codCliStr, CLIENTE_NOME: clientInfo.nomeCliente || 'N/A',
-                    CIDADE: clientInfo.cidade || 'N/A', BAIRRO: clientInfo.bairro || 'N/A',
-                    QTVENDA: qtVenda,
+                    pedido: pedido, nome: vendorName, superv: supervisorName, produto: productCode,
+                    descricao: String(rawRow['DESCRICAO'] || ''), fornecedor: String(rawRow['FORNECEDOR'] || ''),
+                    observacaofor: String(rawRow['OBSERVACAOFOR'] || '').trim(), codfor: String(rawRow['CODFOR'] || '').trim(),
+                    codusur: codUsur, codcli: codCliStr, cliente_nome: clientInfo.nomeCliente || 'N/A',
+                    cidade: clientInfo.cidade || 'N/A', bairro: clientInfo.bairro || 'N/A',
+                    qtvenda: qtVenda,
                     
-                    // --- INÍCIO DA MODIFICAÇÃO: APLICAÇÃO DA REGRA ---
-                    // Se não for faturamento (1 ou 9), VLVENDA é 0
-                    VLVENDA: isFaturamento ? vlVendaOriginal : 0,
-                    
-                    // Se não for faturamento, soma o que veio em VLVENDA (indevidamente) ao VLBONIFIC
-                    VLBONIFIC: isFaturamento ? vlBonificOriginal : (vlVendaOriginal + vlBonificOriginal),
-                    
-                    // Peso (tonelada) - [Instrução do usuário: Deve somar sempre, mesmo não sendo faturamento]
-                    TOTPESOLIQ: pesoOriginal, 
-                    DTPED: dtPed, DTSAIDA: dtSaida,
-                    POSICAO: String(rawRow['POSICAO'] || ''),
-                    ESTOQUEUNIT: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
-                    QTVENDA_EMBALAGEM_MASTER: isNaN(qtdeMaster) || qtdeMaster === 0 ? 0 : qtVenda / qtdeMaster,
-                    // Garante que o tipo de venda correto é passado
-                    TIPOVENDA: tipoVenda,
-                    // Adiciona a filial normalizada para permitir filtragem
-                    FILIAL: filialValue 
-                    // --- FIM DA MODIFICAÇÃO ---
+                    // Valores ajustados e em minúsculas
+                    vlvenda: isFaturamento ? vlVendaOriginal : 0,
+                    vlbonific: isFaturamento ? vlBonificOriginal : (vlVendaOriginal + vlBonificOriginal),
+                    totpesoliq: pesoOriginal, 
+                    dtped: dtPed, dtsaida: dtSaida,
+                    posicao: String(rawRow['POSICAO'] || ''),
+                    estoqueunit: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
+                    qtvenda_embalagem_master: isNaN(qtdeMaster) || qtdeMaster === 0 ? 0 : qtVenda / qtdeMaster,
+                    tipovenda: tipoVenda,
+                    filial: filialValue 
                 };
             });
         };
@@ -334,11 +320,10 @@
                 const newRcaSupervisorMap = new Map();
                 const lastSaleDateMap = new Map();
 
-                // --- INÍCIO DA MODIFICAÇÃO: Usar vendas atuais E históricas para o mapa mestre ---
+                // Usa vendas atuais E históricas para o mapa mestre (inalterado)
                 const allSalesForMap = [...salesDataRaw, ...historyDataRaw];
 
                 allSalesForMap.forEach(row => {
-                // --- FIM DA MODIFICAÇÃO ---
                     try {
                         const codUsur = String(row['CODUSUR'] || '').trim();
                         if (codUsur === '1001') return;
@@ -461,9 +446,10 @@
 
                 self.postMessage({ type: 'progress', status: 'Aplicando regra de filial...', percentage: 75 });
 
+                // Lógica de Override de Filial (inalterada)
                 const allProcessedSales = [...processedSalesData, ...processedHistoryData].sort((a, b) => {
-                    const dateA = parseDate(a.DTPED) || new Date(0);
-                    const dateB = parseDate(b.DTPED) || new Date(0);
+                    const dateA = parseDate(a.dtped) || new Date(0); // ATUALIZADO: Usando dtped
+                    const dateB = parseDate(b.dtped) || new Date(0); // ATUALIZADO: Usando dtped
                     return dateA - dateB;
                 });
 
@@ -471,8 +457,8 @@
                 const clientsWith05Purchase = new Set();
 
                 allProcessedSales.forEach(sale => {
-                    const codCli = sale.CODCLI;
-                    const filial = sale.FILIAL;
+                    const codCli = sale.codcli; // ATUALIZADO: Usando codcli
+                    const filial = sale.filial; // ATUALIZADO: Usando filial
                     if (codCli && filial) {
                         clientLastBranch.set(codCli, filial);
                         if (filial === '05') {
@@ -491,9 +477,9 @@
 
                 const applyBranchOverride = (salesArray, overrideMap) => {
                     return salesArray.map(sale => {
-                        const override = overrideMap.get(sale.CODCLI);
-                        if (override && sale.FILIAL === '05') {
-                            return { ...sale, FILIAL: override };
+                        const override = overrideMap.get(sale.codcli); // ATUALIZADO: Usando codcli
+                        if (override && sale.filial === '05') { // ATUALIZADO: Usando filial
+                            return { ...sale, filial: override };
                         }
                         return sale;
                     });
@@ -507,8 +493,10 @@
 
                 const applyTiagoRule = (salesArray) => {
                     return salesArray.map(sale => {
-                        if (sale.CODSUPERVISOR === '12' && tiagoSellersToMoveTo08.has(sale.CODUSUR)) {
-                            return { ...sale, FILIAL: '08' };
+                        // Assume que CODSUPERVISOR e CODUSUR vêm com as chaves do rawRow
+                        if (sale.codsupervisor === '12' && tiagoSellersToMoveTo08.has(sale.codusur)) {
+                             // ATUALIZADO: Usa codsupervisor e codusur, e altera filial
+                            return { ...sale, filial: '08' }; 
                         }
                         return sale;
                     });
@@ -521,8 +509,8 @@
                 self.postMessage({ type: 'progress', status: 'Atualizando datas de compra...', percentage: 80 });
                 const latestSaleDateByClient = new Map();
                 finalSalesData.forEach(sale => {
-                    const codcli = sale.CODCLI;
-                    const saleDate = parseDate(sale.DTPED);
+                    const codcli = sale.codcli; // ATUALIZADO: Usando codcli
+                    const saleDate = parseDate(sale.dtped); // ATUALIZADO: Usando dtped
                     if (codcli && saleDate) {
                         const existingDate = latestSaleDateByClient.get(codcli);
                         if (!existingDate || saleDate > existingDate) latestSaleDateByClient.set(codcli, saleDate);
@@ -540,37 +528,40 @@
                 const aggregateOrders = (data) => {
                     const orders = new Map();
                     data.forEach(row => {
-                        if (!row.PEDIDO) return;
-                        if (!orders.has(row.PEDIDO)) {
-                            orders.set(row.PEDIDO, {
+                        if (!row.pedido) return; // CORRIGIDO: row.PEDIDO -> row.pedido
+                        if (!orders.has(row.pedido)) { // CORRIGIDO: row.PEDIDO -> row.pedido
+                            orders.set(row.pedido, { // CORRIGIDO: row.PEDIDO -> row.pedido
                                 ...row,
-                                QTVENDA: 0,
-                                VLVENDA: 0,
-                                VLBONIFIC: 0,
-                                TOTPESOLIQ: 0,
-                                FORNECEDORES: new Set(),
-                                CODFORS: new Set()
+                                // CORRIGIDO: Todas as chaves em minúsculas
+                                qtvenda: 0,
+                                vlvenda: 0,
+                                vlbonific: 0,
+                                totpesoliq: 0,
+                                fornecedores: new Set(),
+                                codfors: new Set()
                             });
                         }
-                        const order = orders.get(row.PEDIDO);
-                        order.QTVENDA += row.QTVENDA;
-                        order.VLVENDA += row.VLVENDA;
-                        order.VLBONIFIC += row.VLBONIFIC;
-                        order.TOTPESOLIQ += row.TOTPESOLIQ;
-                        if (row.OBSERVACAOFOR) order.FORNECEDORES.add(row.OBSERVACAOFOR);
-                        if (row.CODFOR) order.CODFORS.add(row.CODFOR);
+                        const order = orders.get(row.pedido); // CORRIGIDO: row.PEDIDO -> row.pedido
+                        // CORRIGIDO: Todas as chaves em minúsculas
+                        order.qtvenda += row.qtvenda;
+                        order.vlvenda += row.vlvenda;
+                        order.vlbonific += row.vlbonific;
+                        order.totpesoliq += row.totpesoliq;
+                        if (row.observacaofor) order.fornecedores.add(row.observacaofor); // CORRIGIDO: row.OBSERVACAOFOR -> row.observacaofor
+                        if (row.codfor) order.codfors.add(row.codfor); // CORRIGIDO: row.CODFOR -> row.codfor
                     });
                     return Array.from(orders.values()).map(order => {
-                        order.FORNECEDORES_LIST = Array.from(order.FORNECEDORES);
-                        order.FORNECEDORES_STR = order.FORNECEDORES_LIST.join(', ');
-                        order.CODFORS_LIST = Array.from(order.CODFORS);
+                        // CORRIGIDO: Todas as chaves em minúsculas
+                        order.fornecedores_list = Array.from(order.fornecedores);
+                        order.fornecedores_str = order.fornecedores_list.join(', ');
+                        order.codfors_list = Array.from(order.codfors);
                         return order;
                     });
                 };
                 const aggregatedByOrder = aggregateOrders(finalSalesData);
 
                 const lastSaleDate = finalSalesData.length > 0
-                    ? new Date(Math.max.apply(null, finalSalesData.map(s => parseDate(s.DTPED)).filter(d => d && !isNaN(d))))
+                    ? new Date(Math.max.apply(null, finalSalesData.map(s => parseDate(s.dtped)).filter(d => d && !isNaN(d)))) // CORRIGIDO: s.DTPED -> s.dtped
                     : new Date();
                 lastSaleDate.setHours(0,0,0,0);
                 const passedWorkingDaysCurrentMonth = getPassedWorkingDaysInSpecificMonth(
