@@ -174,7 +174,11 @@
                             const workbook = XLSX.read(new Uint8Array(data), {type: 'array'});
                             const firstSheetName = workbook.SheetNames[0];
                             const worksheet = workbook.Sheets[firstSheetName];
-                            jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, cellDates: true });
+                            /* CORREÇÃO: Mudar cellDates para 'false' força o XLSX a 
+                               retornar datas como strings formatadas (ex: "05/11/2025") 
+                               em vez de objetos Date incorretos. A nossa função parseDate() 
+                               irá então tratar a string corretamente. */
+                            jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, cellDates: false });
                         }
                         resolve(jsonData);
                     } catch (error) {
