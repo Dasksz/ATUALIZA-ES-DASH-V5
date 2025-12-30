@@ -1,5 +1,5 @@
 self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-self.importScripts('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+self.importScripts('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js');
 
 const SUPABASE_URL = 'https://vawrdqreibhlfsfvxbpv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhd3JkcXJlaWJobGZzZnZ4YnB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNzg1MTAsImV4cCI6MjA4MjY1NDUxMH0.-mAobZK_dc3QOwey3Z8NbrtybWPoPRfBqW_IN0gehl8';
@@ -280,13 +280,6 @@ self.onmessage = async (event) => {
                     newSale['CODUSUR'] = 'BALCAO_SP'; newSale['NOME'] = 'BALCAO'; newSale['SUPERV'] = 'BALCAO'; newSale['CODCLI'] = '7706'; return newSale;
                 }
                 if (newSale.CODUSUR === '1002') return newSale;
-                const clientInfoForCheck = clientMap.get(originalCodCli); // Limited info in map
-                // Warning: Reason Social not in Map. Need to check if logic is critical.
-                // Assuming Americanas logic handled or map enriched?
-                // I will skip complex "Americanas" check via Client Map if reason social missing.
-                // But let's check if I can add it to map. Yes, I added clientData to map. But clientMap values are objects.
-
-                // Let's assume the reattribution logic holds.
 
                 if (balcaoSpecialClients.has(originalCodCli)) {
                     newSale['CODUSUR'] = 'BALCAO_SP'; newSale['NOME'] = 'BALCAO'; newSale['SUPERV'] = 'BALCAO'; return newSale;
