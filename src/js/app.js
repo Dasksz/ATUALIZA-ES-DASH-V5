@@ -2,43 +2,134 @@
 import supabase from './supabase.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    const mainDashboard = document.getElementById('main-dashboard');
-    const cityView = document.getElementById('city-view');
-    const uploadScreen = document.getElementById('upload-screen');
+    // --- Auth & Navigation Elements ---
+    const loginView = document.getElementById('login-view');
+    const appLayout = document.getElementById('app-layout');
+    const loginForm = document.getElementById('login-form');
+    const loginError = document.getElementById('login-error');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    // Sidebar
+    const sideMenu = document.getElementById('side-menu');
+    const openSidebarMobileBtn = document.getElementById('open-sidebar-mobile');
+    const closeSidebarMobileBtn = document.getElementById('close-sidebar-mobile');
+    const navDashboardBtn = document.getElementById('nav-dashboard');
+    const navUploaderBtn = document.getElementById('nav-uploader');
+
+    // Views
     const dashboardContainer = document.getElementById('dashboard-container');
+    const uploaderModal = document.getElementById('uploader-modal');
+    const closeUploaderBtn = document.getElementById('close-uploader-btn');
 
-    // Check if data exists? Or just show dashboard if no upload pending.
-    // For now, let's keep the Upload Screen as default, but add a "View Dashboard" button if user just wants to view.
-    // However, the prompt implies "Upload -> Process -> View".
+    // Dashboard Internal Views
+    const mainDashboardContent = document.getElementById('main-dashboard-content');
+    const cityView = document.getElementById('city-view');
 
-    // Filter Elements
-    const supervisorFilter = document.getElementById('supervisor-filter');
-    const vendedorFilter = document.getElementById('vendedor-filter');
-    const fornecedorFilter = document.getElementById('fornecedor-filter');
-    const cidadeFilter = document.getElementById('cidade-filter');
-    const filialFilter = document.getElementById('filial-filter');
-    const anoFilter = document.getElementById('ano-filter');
-    const mesFilter = document.getElementById('mes-filter');
-
+    // Buttons in Dashboard
     const showCityBtn = document.getElementById('show-city-btn');
     const backToMainBtn = document.getElementById('back-to-main-btn');
-    const refreshBtn = document.getElementById('refresh-btn');
 
-    let currentCharts = {};
-
-    // --- Upload Logic ---
+    // Uploader Elements
     const salesPrevYearInput = document.getElementById('sales-prev-year-input');
     const salesCurrYearInput = document.getElementById('sales-curr-year-input');
     const salesCurrMonthInput = document.getElementById('sales-curr-month-input');
     const clientsFileInput = document.getElementById('clients-file-input');
     const productsFileInput = document.getElementById('products-file-input');
     const generateBtn = document.getElementById('generate-btn');
-    const viewDashBtn = document.getElementById('view-dash-btn'); // New button
-
     const statusContainer = document.getElementById('status-container');
     const statusText = document.getElementById('status-text');
     const progressBar = document.getElementById('progress-bar');
 
+    // --- Auth Logic ---
+
+    async function checkSession() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            showApp();
+        } else {
+            showLogin();
+        }
+    }
+
+    function showLogin() {
+        loginView.classList.remove('hidden');
+        appLayout.classList.add('hidden');
+    }
+
+    function showApp() {
+        loginView.classList.add('hidden');
+        appLayout.classList.remove('hidden');
+        initDashboard(); // Load data
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        loginError.classList.add('hidden');
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password
+        });
+
+        if (error) {
+            loginError.textContent = 'Erro ao entrar: ' + error.message;
+            loginError.classList.remove('hidden');
+        } else {
+            showApp();
+        }
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+        await supabase.auth.signOut();
+        showLogin();
+    });
+
+    // Check session on start
+    checkSession();
+
+    // --- Navigation Logic ---
+
+    function toggleSidebar() {
+        sideMenu.classList.toggle('-translate-x-full');
+    }
+
+    openSidebarMobileBtn.addEventListener('click', toggleSidebar);
+    closeSidebarMobileBtn.addEventListener('click', toggleSidebar);
+
+    navDashboardBtn.addEventListener('click', () => {
+        dashboardContainer.classList.remove('hidden');
+        uploaderModal.classList.add('hidden');
+        // Reset to main dashboard view
+        mainDashboardContent.classList.remove('hidden');
+        cityView.classList.add('hidden');
+        if (window.innerWidth < 768) toggleSidebar();
+    });
+
+    navUploaderBtn.addEventListener('click', () => {
+        uploaderModal.classList.remove('hidden');
+        if (window.innerWidth < 768) toggleSidebar();
+    });
+
+    closeUploaderBtn.addEventListener('click', () => {
+        uploaderModal.classList.add('hidden');
+    });
+
+    // --- Dashboard Internal Navigation ---
+    showCityBtn.addEventListener('click', () => {
+        mainDashboardContent.classList.add('hidden');
+        cityView.classList.remove('hidden');
+        loadCityView();
+    });
+
+    backToMainBtn.addEventListener('click', () => {
+        cityView.classList.add('hidden');
+        mainDashboardContent.classList.remove('hidden');
+    });
+
+
+    // --- Uploader Logic ---
     let files = {};
 
     const checkFiles = () => {
@@ -78,10 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.textContent = 'Dados atualizados com sucesso!';
                 progressBar.style.width = '100%';
                 setTimeout(() => {
-                    uploadScreen.classList.add('hidden');
-                    dashboardContainer.classList.remove('hidden');
-                    initDashboard();
-                }, 1000);
+                    uploaderModal.classList.add('hidden');
+                    statusContainer.classList.add('hidden');
+                    generateBtn.disabled = false;
+                    initDashboard(); // Reload data
+                }, 1500);
             } else if (type === 'error') {
                 statusText.innerHTML = `<span class="text-red-500">Erro: ${message}</span>`;
                 generateBtn.disabled = false;
@@ -89,13 +181,18 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     });
 
-    if(viewDashBtn) viewDashBtn.addEventListener('click', () => {
-        uploadScreen.classList.add('hidden');
-        dashboardContainer.classList.remove('hidden');
-        initDashboard();
-    });
+    // --- Dashboard Data Logic ---
 
-    // --- Dashboard Logic ---
+    // Filter Elements
+    const supervisorFilter = document.getElementById('supervisor-filter');
+    const vendedorFilter = document.getElementById('vendedor-filter');
+    const fornecedorFilter = document.getElementById('fornecedor-filter');
+    const cidadeFilter = document.getElementById('cidade-filter');
+    const filialFilter = document.getElementById('filial-filter');
+    const anoFilter = document.getElementById('ano-filter');
+    const mesFilter = document.getElementById('mes-filter');
+
+    let currentCharts = {};
 
     async function initDashboard() {
         await loadFilters();
@@ -137,14 +234,14 @@ document.addEventListener('DOMContentLoaded', () => {
             mesFilter.appendChild(opt);
         });
 
-        // Event Listeners
+        // Event Listeners (remove old ones if re-init? simplified here)
         [supervisorFilter, vendedorFilter, fornecedorFilter, cidadeFilter, filialFilter, anoFilter, mesFilter].forEach(el => {
-            el.addEventListener('change', loadMainDashboardData);
+            el.onchange = loadMainDashboardData; // Replaces previous listener
         });
     }
 
     function populateSelect(element, items) {
-        element.innerHTML = '<option value="">Todos</option>'; // Or 'todos' for ano
+        element.innerHTML = '<option value="">Todos</option>';
         if (element.id === 'ano-filter') element.options[0].value = 'todos';
 
         if (items) {
@@ -189,12 +286,9 @@ document.addEventListener('DOMContentLoaded', () => {
             baseEl.classList.add('hidden');
         }
 
-        // Monthly Data Processing for Chart & Table
         const currentData = data.monthly_data_current || [];
         const previousData = data.monthly_data_previous || [];
 
-        // KPI Evolution Logic (Simplified matching index.html logic)
-        // Need to find "Current Month" in data
         const targetIndex = data.target_month_index;
 
         const currMonthData = currentData.find(d => d.month_index === targetIndex) || { faturamento: 0, peso: 0 };
@@ -208,15 +302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateKpi('kpi-evo-vs-ano-fat', fatEvo);
         updateKpi('kpi-evo-vs-ano-kg', pesoEvo);
 
-        // Trimestral (Last 3 months including target)
-        // Logic: Sum last 3 months
-        let currTriFat = 0, currTriPeso = 0, prevTriFat = 0, prevTriPeso = 0; // "Prev Tri" usually means Prev Year Same Tri? Or Prev 3 Months of Current Year?
-        // Index.html: "FAT vs Trim. Ant." usually compares Current Month vs Average of Previous 3 Months (Sequential).
-        // Let's check index.html logic:
-        // `avgFatTri = monthCount > 0 ? totalFatTri / monthCount : 0;` (Average of previous 3 months)
-        // `fatEvoVsTri = avgFatTri > 0 ? ((currentMonthFat / avgFatTri) - 1) * 100`
-        // So it compares Current Month vs Average of Last 3 Months.
-
+        // Trimestral
         let triSumFat = 0, triSumPeso = 0, triCount = 0;
         for (let i = 1; i <= 3; i++) {
             const idx = targetIndex - i;
@@ -236,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateKpi('kpi-evo-vs-tri-fat', fatEvoTri);
         updateKpi('kpi-evo-vs-tri-kg', pesoEvoTri);
 
-        // Update Titles
+        // Titles
         const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
         const mName = monthNames[targetIndex]?.toUpperCase() || "";
         document.getElementById('kpi-title-evo-ano-fat').textContent = `FAT ${mName} vs Ano Ant.`;
@@ -244,7 +330,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Chart
         const chartLabels = monthNames;
-        // Map data to 12 months array
         const mapTo12 = (arr) => {
             const res = new Array(12).fill(0);
             arr.forEach(d => res[d.month_index] = d.faturamento);
@@ -320,7 +405,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const tableHead = document.querySelector('#monthly-summary-table thead tr');
         tableBody.innerHTML = '';
 
-        // Header
         const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
         let headerHTML = '<th class="px-2 py-2 text-left">INDICADOR</th>';
         monthNames.forEach(m => headerHTML += `<th class="px-2 py-2 text-center">${m}</th>`);
@@ -334,11 +418,6 @@ document.addEventListener('DOMContentLoaded', () => {
             { name: 'TON VENDIDA', key: 'peso', fmt: v => `${(v/1000).toFixed(2)} Kg` }
         ];
 
-        // We show CURRENT YEAR data in the table by default, or maybe handle comparison?
-        // Index.html logic: Shows 12 months columns.
-        // It shows EITHER Current OR Previous year based on filters.
-        // Let's stick to Current Year for now as default.
-
         indicators.forEach(ind => {
             let rowHTML = `<tr class="table-row"><td class="font-bold p-2 text-left">${ind.name}</td>`;
             for(let i=0; i<12; i++) {
@@ -350,18 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
             tableBody.innerHTML += rowHTML;
         });
     }
-
-    // --- City View ---
-    showCityBtn.addEventListener('click', () => {
-        mainDashboard.classList.add('hidden');
-        cityView.classList.remove('hidden');
-        loadCityView();
-    });
-
-    backToMainBtn.addEventListener('click', () => {
-        cityView.classList.add('hidden');
-        mainDashboard.classList.remove('hidden');
-    });
 
     async function loadCityView() {
         const filters = {
