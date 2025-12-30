@@ -55,8 +55,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // --- Cache (IndexedDB) Logic ---
+    const DB_NAME = 'PrimeDashboardDB';
+    const STORE_NAME = 'data_store';
+    const DB_VERSION = 1;
+
+    const initDB = () => {
+        return idb.openDB(DB_NAME, DB_VERSION, {
+            upgrade(db) {
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
+            },
+        });
+    };
+
+    const getFromCache = async (key) => {
+        try {
+            const db = await initDB();
+            return await db.get(STORE_NAME, key);
+        } catch (e) {
+            console.warn('Erro ao ler cache:', e);
+            return null;
+        }
+    };
+
+    const saveToCache = async (key, value) => {
+        try {
+            const db = await initDB();
+            await db.put(STORE_NAME, value, key);
+        } catch (e) {
+            console.warn('Erro ao salvar cache:', e);
+        }
+    };
+
     let checkProfileLock = false;
     let isAppReady = false;
+
+    // --- Visibility & Reconnection Logic ---
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+            console.log('Tab visible. Checking connection status...');
+            const { data } = await supabase.auth.getSession();
+            if (data && data.session) {
+                if (!isAppReady) {
+                     console.log('Session active but app not ready. Retrying profile check...');
+                     checkProfileStatus(data.session.user);
+                }
+            } else {
+                // If no session and we thought we were logged in, reload might be needed or just let onAuthStateChange handle it
+                if (isAppReady) {
+                     console.warn('Session lost while backgrounded. Reloading...');
+                     window.location.reload();
+                }
+            }
+        }
+    });
 
     async function checkSession() {
         console.log('Iniciando verificação de sessão...');
@@ -335,12 +389,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadFilters() {
+        // Try Cache First
+        const cachedFilters = await getFromCache('dashboard_filters');
+        if (cachedFilters) {
+            console.log('Loading filters from cache...');
+            applyFiltersData(cachedFilters);
+        }
+
+        // Fetch Fresh Data
         const { data, error } = await supabase.rpc('get_dashboard_filters');
         if (error) {
             console.error('Error loading filters:', error);
             return;
         }
 
+        // Update Cache and UI if different (or just update always)
+        await saveToCache('dashboard_filters', data);
+        applyFiltersData(data);
+    }
+
+    function applyFiltersData(data) {
         // Populate Selects
         populateSelect(supervisorFilter, data.supervisors);
         populateSelect(vendedorFilter, data.vendedores);
@@ -360,14 +428,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Meses (Static)
-        mesFilter.innerHTML = '<option value="">Todos</option>';
-        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-        meses.forEach((m, i) => {
-            const opt = document.createElement('option');
-            opt.value = i;
-            opt.textContent = m;
-            mesFilter.appendChild(opt);
-        });
+        // Check if options already exist to avoid duplication on re-render from cache then net
+        if (mesFilter.options.length <= 1) {
+            mesFilter.innerHTML = '<option value="">Todos</option>';
+            const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+            meses.forEach((m, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = m;
+                mesFilter.appendChild(opt);
+            });
+        }
 
         // Event Listeners (remove old ones if re-init? simplified here)
         [supervisorFilter, vendedorFilter, fornecedorFilter, cidadeFilter, filialFilter, anoFilter, mesFilter].forEach(el => {
@@ -400,6 +471,15 @@ document.addEventListener('DOMContentLoaded', () => {
             p_mes: mesFilter.value
         };
 
+        // Cache Key based on filters (simple stringify)
+        const cacheKey = `dashboard_data_${JSON.stringify(filters)}`;
+
+        // Try Cache First
+        const cachedData = await getFromCache(cacheKey);
+        if (cachedData) {
+            renderDashboard(cachedData);
+        }
+
         const { data, error } = await supabase.rpc('get_main_dashboard_data', filters);
 
         if (error) {
@@ -407,6 +487,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Save fresh data
+        await saveToCache(cacheKey, data);
         renderDashboard(data);
     }
 
