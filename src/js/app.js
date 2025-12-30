@@ -87,116 +87,24 @@ document.addEventListener('DOMContentLoaded', () => {
         checkProfileLock = true;
         console.log('Verificando perfil para ID:', user.id);
         
-        let attempts = 0;
-        const maxAttempts = 3;
-        let success = false;
-        let finalError = null;
-        let profile = null;
+        try {
+            // Check Profile with Timeout - 15s (Strictly matching reference)
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 15000));
+            const profileQuery = supabase.from('profiles').select('status').eq('id', user.id).single();
 
-        while (attempts < maxAttempts && !success) {
-            attempts++;
-            try {
-                console.log(`Tentativa ${attempts}/${maxAttempts} de busca de perfil...`);
-                
-                // Timeout promise (Increased to 30s)
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Tempo limite de conexão excedido (30s). Verifique sua internet.')), 30000)
-                );
+            const { data: profile, error } = await Promise.race([profileQuery, timeout]);
 
-                const profileQuery = supabase
-                    .from('profiles')
-                    .select('status')
-                    .eq('id', user.id)
-                    .single()
-                    .then(res => res)
-                    .catch(err => ({ error: err, data: null }));
-
-                const result = await Promise.race([profileQuery, timeoutPromise]);
-                
-                // If we get here, query finished (success or SQL error)
-                profile = result.data;
-                const error = result.error;
-
-                console.log('Busca finalizada. Dados:', profile, 'Erro:', error);
-
-                if (!error) {
-                    success = true;
-                } else if (error.code === 'PGRST116') {
-                    // Profile missing -> Not a network error, break retry loop to handle creation
-                    success = true; // Treated as "success" in fetching (fetched nothing)
-                    finalError = error;
-                } else {
-                    throw error; // Throw to catch block for retry
-                }
-
-            } catch (err) {
-                console.error(`Erro na tentativa ${attempts}:`, err);
-                finalError = err;
-
-                // Check for specific "message channel closed" error (often caused by extensions)
-                const isChannelError = err.message && (
-                    err.message.includes('message channel closed') ||
-                    err.message.includes('returning true')
-                );
-
-                if (isChannelError) {
-                    console.warn('Erro de canal detectado (extensão/browser), tentando novamente imediatamente...');
-                    continue;
-                }
-
-                if (attempts < maxAttempts) {
-                    console.log('Aguardando 2s antes de tentar novamente...');
-                    await new Promise(r => setTimeout(r, 2000));
+            if (error) {
+                if (error.code !== 'PGRST116') {
+                    throw error;
                 }
             }
-        }
 
-        checkProfileLock = false;
+            // Status handling
+            const status = profile?.status || 'pendente';
+            console.log('Status do perfil:', status);
 
-        if (!success) {
-            console.error('Falha crítica após retentativas:', finalError);
-            // Only force logout if we are NOT already on the dashboard to prevent annoyance
-            const appVisible = !document.getElementById('app-layout').classList.contains('hidden');
-            if (!appVisible) {
-                showScreen('login-view');
-            } else {
-                console.warn('Mantendo usuário no dashboard apesar do erro de verificação (Offline mode?)');
-            }
-            return;
-        }
-
-        // Handle case where profile doesn't exist (e.g. trigger failed)
-        // PGRST116 is caught in the loop above
-        if (finalError && finalError.code === 'PGRST116') {
-            console.log('Perfil não encontrado (PGRST116), tentando criar manualmente...');
-            
-            try {
-                const { data: newProfile, error: insertError } = await supabase
-                    .from('profiles')
-                    .insert([{ id: user.id, email: user.email, status: 'pendente' }])
-                    .select('status')
-                    .single();
-
-                console.log('Resultado da criação manual:', newProfile, insertError);
-
-                if (insertError) {
-                    console.error('FALHA ao criar perfil (insert):', insertError);
-                    profile = { status: 'pendente' };
-                } else {
-                    console.log('Perfil criado com sucesso:', newProfile);
-                    profile = newProfile;
-                }
-            } catch (e) {
-                console.error('Exceção ao criar perfil:', e);
-                profile = { status: 'pendente' };
-            }
-        }
-
-        // Status handling
-        const status = profile?.status || 'pendente';
-        console.log('Status do perfil:', status);
-
-        if (status === 'aprovado') {
+            if (status === 'aprovado') {
             const currentScreen = document.getElementById('app-layout');
             if (currentScreen.classList.contains('hidden')) {
                 console.log('Acesso aprovado. Carregando dashboard...');
@@ -205,16 +113,26 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 console.log('Acesso já aprovado e dashboard visível.');
             }
-        } else {
-            console.log('Acesso pendente ou bloqueado. Redirecionando para tela de espera.');
-            showScreen('tela-pendente');
-            
-            if (status === 'bloqueado') {
-                    const statusMsg = document.getElementById('status-text-pendente'); 
-                    if(statusMsg) statusMsg.textContent = "Acesso Bloqueado";
-            }
+            } else {
+                console.log('Acesso pendente ou bloqueado. Redirecionando para tela de espera.');
+                showScreen('tela-pendente');
 
-            startStatusListener(user.id);
+                if (status === 'bloqueado') {
+                        const statusMsg = document.getElementById('status-text-pendente');
+                        if(statusMsg) statusMsg.textContent = "Acesso Bloqueado";
+                }
+
+                startStatusListener(user.id);
+            }
+        } catch (err) {
+            console.error('Error checking profile:', err);
+            checkProfileLock = false;
+
+            // Show error in the loading screen or alert
+            alert("Erro de conexão: " + (err.message || 'Erro desconhecido'));
+            showScreen('login-view');
+        } finally {
+            checkProfileLock = false;
         }
     }
 
