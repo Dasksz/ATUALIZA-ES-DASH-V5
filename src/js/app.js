@@ -79,11 +79,29 @@ document.addEventListener('DOMContentLoaded', () => {
     async function checkProfileStatus(user) {
         console.log('Verificando perfil para ID:', user.id);
         try {
-            let { data: profile, error } = await supabase
+            console.log('Iniciando busca de perfil no Supabase...');
+
+            // Timeout promise to prevent hanging
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout ao verificar perfil (10s)')), 10000)
+            );
+
+            const profileQuery = supabase
                 .from('profiles')
                 .select('status')
                 .eq('id', user.id)
                 .single();
+
+            let result;
+            try {
+                result = await Promise.race([profileQuery, timeoutPromise]);
+            } catch (err) {
+                console.error('Erro ou Timeout na busca do perfil:', err);
+                throw err;
+            }
+
+            let { data: profile, error } = result;
+            console.log('Busca finalizada. Dados:', profile, 'Erro:', error);
 
             if (error) {
                 console.warn('Erro ao buscar perfil:', error.code, error.message);
@@ -98,6 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     .insert([{ id: user.id, email: user.email, status: 'pendente' }])
                     .select('status')
                     .single();
+
+                console.log('Resultado da criação manual:', newProfile, insertError);
 
                 if (insertError) {
                     console.error('FALHA ao criar perfil (insert):', insertError);
