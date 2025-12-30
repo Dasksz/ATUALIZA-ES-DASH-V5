@@ -73,13 +73,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function checkProfileStatus(user) {
         try {
-            const { data: profile, error } = await supabase
+            let { data: profile, error } = await supabase
                 .from('profiles')
                 .select('status')
                 .eq('id', user.id)
                 .single();
 
-            if (error && error.code !== 'PGRST116') {
+            // Handle case where profile doesn't exist (e.g. trigger failed)
+            if (error && error.code === 'PGRST116') {
+                console.log('Perfil não encontrado, criando...');
+                const { data: newProfile, error: insertError } = await supabase
+                    .from('profiles')
+                    .insert([{ id: user.id, email: user.email, status: 'pendente' }])
+                    .select('status')
+                    .single();
+
+                if (insertError) {
+                    console.error('Erro ao criar perfil:', insertError);
+                } else {
+                    profile = newProfile;
+                    error = null;
+                }
+            }
+
+            if (error) {
                 console.error('Erro ao verificar perfil:', error);
                 // Fallback or error state
                 showScreen('login-view');
@@ -87,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Status handling
-            const status = profile?.status || 'pendente'; // Default to pending if no profile found (though trigger should create it)
+            const status = profile?.status || 'pendente';
 
             if (status === 'aprovado') {
                 showScreen('app-layout');
