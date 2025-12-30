@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerador de Relatório Anual v6.3</title>
+    <title>Painel de Vendas - PRIME v7.0 (Supabase)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { 
             font-family: 'Inter', sans-serif; 
             background-color: #0d1126;
+            color: #e2e8f0;
         }
         .file-input-label { 
             display: block; 
@@ -37,1147 +39,119 @@
         .sticky-header th { position: sticky; top: 0; z-index: 10; background-color: #334155; }
     </style>
 </head>
-<body class="text-slate-200 flex items-center justify-center min-h-screen">
-    <div id="upload-screen" class="text-center p-8 bg-[#1d2347] rounded-lg shadow-2xl max-w-lg w-full m-4 border border-slate-700">
-        <h1 class="text-2xl font-bold text-white mb-4">Painel de Vendas - Gerador Anual v6.3</h1>
-        <p class="text-slate-400 mb-6">Carregue os arquivos para gerar um dashboard offline com comparativo anual e mensal. O processamento ocorre em segundo plano.</p>
-        
-        <div class="space-y-4 mb-6">
-            <div>
-                <label for="sales-prev-year-input" class="file-input-label">1. Vendas Ano Anterior (Completo)</label>
-                <input type="file" id="sales-prev-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/>
-            </div>
-            <div>
-                <label for="sales-curr-year-input" class="file-input-label">2. Vendas Ano Atual (Histórico)</label>
-                <input type="file" id="sales-curr-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/>
-            </div>
-             <div>
-                <label for="sales-curr-month-input" class="file-input-label">3. Vendas Mês Atual (Para Atualização)</label>
-                <input type="file" id="sales-curr-month-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/>
-            </div>
-            <div>
-                <label for="clients-file-input" class="file-input-label">4. Cadastro de Clientes</label>
-                <input type="file" id="clients-file-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/>
-            </div>
-            <div>
-                <label for="products-file-input" class="file-input-label">5. Cadastro de Produtos</label>
-                <input type="file" id="products-file-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/>
-            </div>
-        </div>
-        
-        <button id="generate-btn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg w-full disabled:bg-slate-600" disabled>
-            Gerar Relatório
-        </button>
+<body class="min-h-screen">
 
-        <div id="status-container" class="hidden mt-6 text-sm h-12 flex flex-col justify-center">
-            <p id="status-text" class="mb-2"></p>
-            <div class="progress-bar-container w-full h-2">
-                <div id="progress-bar" class="progress-bar"></div>
-            </div>
-        </div>
+    <!-- Upload Screen -->
+    <div id="upload-screen" class="flex flex-col items-center justify-center min-h-screen p-4">
+        <div class="bg-[#1d2347] rounded-lg shadow-2xl max-w-lg w-full p-8 border border-slate-700">
+            <h1 class="text-2xl font-bold text-white mb-4 text-center">Painel de Vendas - PRIME v7.0</h1>
+            <p class="text-slate-400 mb-6 text-center">Carregue os dados para o Supabase ou acesse o Dashboard se já estiver atualizado.</p>
 
-        <div id="download-container" class="hidden mt-6 border-t border-slate-700 pt-6">
-            <a id="download-link" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-lg w-full inline-block">
-                Baixar Relatório HTML
-            </a>
+            <div class="space-y-4 mb-6">
+                <div><label class="file-input-label">1. Vendas Ano Anterior (Completo)</label><input type="file" id="sales-prev-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
+                <div><label class="file-input-label">2. Vendas Ano Atual (Histórico)</label><input type="file" id="sales-curr-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
+                <div><label class="file-input-label">3. Vendas Mês Atual (Atualização)</label><input type="file" id="sales-curr-month-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
+                <div><label class="file-input-label">4. Cadastro de Clientes</label><input type="file" id="clients-file-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
+                <div><label class="file-input-label">5. Cadastro de Produtos</label><input type="file" id="products-file-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
+            </div>
+
+            <div class="flex gap-4">
+                <button id="generate-btn" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-slate-600" disabled>Atualizar Base</button>
+                <button id="view-dash-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Acessar Dashboard</button>
+            </div>
+
+            <div id="status-container" class="hidden mt-6 text-sm h-12 flex flex-col justify-center">
+                <p id="status-text" class="mb-2 text-center"></p>
+                <div class="progress-bar-container w-full h-2">
+                    <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script id="worker-script" type="text/worker-javascript">
-        self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    <!-- Dashboard Screen -->
+    <div id="dashboard-container" class="hidden container mx-auto p-4">
+        <!-- Header & Filters -->
+        <header class="mb-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-bold text-white">ACOMPANHAMENTO DE INDICADOR</h1>
+                <p class="text-slate-400 text-sm">Dados obtidos via Supabase</p>
+            </div>
+            <button onclick="location.reload()" class="text-sm bg-slate-700 px-3 py-1 rounded hover:bg-slate-600">Sair/Trocar Arquivos</button>
+        </header>
 
-        function parseDate(dateString) {
-            if (!dateString) return null;
-            if (dateString instanceof Date) return !isNaN(dateString.getTime()) ? dateString : null;
-            if (typeof dateString === 'number') return new Date(Math.round((dateString - 25569) * 86400 * 1000));
-            if (typeof dateString !== 'string') return null;
-            
-            const parts = dateString.split('/');
-            if (parts.length === 3) {
-                const [day, month, year] = parts;
-                if (day.length === 2 && month.length === 2 && year.length === 4) return new Date(`${year}-${month}-${day}T00:00:00`);
-            }
-            
-            const isoDate = new Date(dateString);
-            return !isNaN(isoDate.getTime()) ? isoDate : null;
-        }
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
+            <div><label class="text-xs text-slate-400">Ano</label><select id="ano-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="todos">Todos</option></select></div>
+            <div><label class="text-xs text-slate-400">Mês</label><select id="mes-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
+            <div><label class="text-xs text-slate-400">Filial</label><select id="filial-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option></select></div>
+            <div><label class="text-xs text-slate-400">Cidade</label><select id="cidade-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option></select></div>
+            <div><label class="text-xs text-slate-400">Supervisor</label><select id="supervisor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
+            <div><label class="text-xs text-slate-400">Vendedor</label><select id="vendedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
+            <div><label class="text-xs text-slate-400">Fornecedor</label><select id="fornecedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
+        </div>
         
-        function parseBrazilianNumber(value) {
-            if (typeof value === 'number') return value;
-            if (typeof value !== 'string' || !value) return 0;
-            const cleaned = String(value).replace(/R\$\s?/g, '').trim();
-            const lastComma = cleaned.lastIndexOf(',');
-            const lastDot = cleaned.lastIndexOf('.');
-            let numberString;
-            if (lastComma > lastDot) {
-                numberString = cleaned.replace(/\./g, '').replace(',', '.');
-            } else if (lastDot > lastComma) {
-                numberString = cleaned.replace(/,/g, '');
-            } else {
-                numberString = cleaned.replace(',', '.');
-            }
-            const number = parseFloat(numberString);
-            return isNaN(number) ? 0 : number;
-        }
-
-        const readFile = (file) => {
-            return new Promise((resolve, reject) => {
-                if (!file) {
-                    resolve([]);
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        let jsonData;
-                        const data = event.target.result;
-                        if (file.name.endsWith('.csv')) {
-                            let decodedData;
-                            try {
-                                decodedData = new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(data));
-                            } catch (e) {
-                                decodedData = new TextDecoder('iso-8859-1').decode(new Uint8Array(data));
-                            }
-                            
-                            const lines = decodedData.split(/\r?\n/).filter(line => line.trim() !== '');
-                            if (lines.length < 1) {
-                                resolve([]);
-                                return;
-                            };
-                            
-                            const firstLine = lines[0];
-                            const delimiter = firstLine.includes(';') ? ';' : ',';
-                            const headers = lines.shift().trim().split(delimiter).map(h => h.replace(/"/g, '').trim().replace(/^\uFEFF/, ''));
-                            
-                            jsonData = lines.map(line => {
-                                const values = line.split(delimiter).map(v => v.replace(/"/g, ''));
-                                let row = {};
-                                headers.forEach((header, index) => {
-                                    row[header] = values[index] || null;
-                                });
-                                return row;
-                            });
-                        } else {
-                            const workbook = XLSX.read(new Uint8Array(data), {type: 'array'});
-                            const firstSheetName = workbook.SheetNames[0];
-                            const worksheet = workbook.Sheets[firstSheetName];
-                            jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, cellDates: true });
-                        }
-                        resolve(jsonData);
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                reader.onerror = () => reject(new Error(`Erro ao ler o arquivo '${file.name}'.`));
-                reader.readAsArrayBuffer(file);
-            });
-        };
-
-        const processSalesData = (rawData, clientMap, productMasterMap) => {
-            return rawData.map(rawRow => {
-                const clientInfo = clientMap.get(String(rawRow['CODCLI']).trim()) || {};
-                let vendorName = String(rawRow['NOME'] || '');
-                let supervisorName = String(rawRow['SUPERV'] || '');
-                let codUsur = String(rawRow['CODUSUR'] || '');
-                const pedido = String(rawRow['PEDIDO'] || '');
-                if (supervisorName.trim().toUpperCase() === 'OSÉAS SANTOS OL') supervisorName = 'OSVALDO NUNES O';
-                
-                const supervisorUpper = (supervisorName || '').trim().toUpperCase();
-                if (supervisorUpper === 'BALCAO' || supervisorUpper === 'BALCÃO') supervisorName = 'BALCAO';
-                
-                if (pedido.startsWith('120')) { 
-                    vendorName = 'VD HIAGO'; 
-                    supervisorName = 'HIAGO ASSUNCAO'; 
-                    codUsur = '1002'; 
-                }
-
-                let dtPed = rawRow['DTPED'];
-                const dtSaida = rawRow['DTSAIDA'];
-                const parsedDtPed = parseDate(dtPed);
-                const parsedDtSaida = parseDate(dtSaida);
-                if (parsedDtPed && parsedDtSaida && (parsedDtPed.getFullYear() < parsedDtSaida.getFullYear() || (parsedDtPed.getFullYear() === parsedDtSaida.getFullYear() && parsedDtPed.getMonth() < parsedDtSaida.getMonth()))) {
-                    dtPed = dtSaida;
-                }
-                const productCode = String(rawRow['PRODUTO'] || '').trim();
-                const qtdeMaster = productMasterMap.get(productCode) || 1;
-                const qtVenda = parseInt(String(rawRow['QTVENDA'] || '0').trim(), 10);
-                
-                let filialValue = String(rawRow['FILIAL'] || '').trim();
-                if (filialValue === '5') filialValue = '05';
-                if (filialValue === '8') filialValue = '08';
-
-                return {
-                    PEDIDO: pedido, NOME: vendorName, SUPERV: supervisorName, PRODUTO: productCode,
-                    DESCRICAO: String(rawRow['DESCRICAO'] || ''), FORNECEDOR: String(rawRow['FORNECEDOR'] || ''),
-                    OBSERVACAOFOR: String(rawRow['OBSERVACAOFOR'] || '').trim(), CODFOR: String(rawRow['CODFOR'] || '').trim(),
-                    CODUSUR: codUsur, CODCLI: String(rawRow['CODCLI'] || '').trim(), CLIENTE_NOME: clientInfo.nomeCliente || 'N/A',
-                    CIDADE: clientInfo.cidade || 'N/A', BAIRRO: clientInfo.bairro || 'N/A',
-                    QTVENDA: qtVenda, VLVENDA: parseBrazilianNumber(rawRow['VLVENDA']),
-                    VLBONIFIC: parseBrazilianNumber(rawRow['VLBONIFIC']), VLDEVOLUCAO: parseBrazilianNumber(rawRow['VLDEVOLUCAO']),
-                    TOTPESOLIQ: parseBrazilianNumber(rawRow['TOTPESOLIQ']), DTPED: dtPed, DTSAIDA: dtSaida, 
-                    POSICAO: String(rawRow['POSICAO'] || ''),
-                    FILIAL: filialValue,
-                    CODSUPERVISOR: String(rawRow['CODSUPERVISOR'] || '').trim(),
-                    ESTOQUECX: parseBrazilianNumber(rawRow['ESTOQUECX']),
-                    ESTOQUEUNIT: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
-                    QTVENDA_EMBALAGEM_MASTER: isNaN(qtdeMaster) || qtdeMaster === 0 ? 0 : qtVenda / qtdeMaster
-                };
-            });
-        };
-
-        self.onmessage = async (event) => {
-            const { salesPrevYearFile, salesCurrYearFile, salesCurrMonthFile, clientsFile, productsFile } = event.data;
-
-            try {
-                self.postMessage({ type: 'progress', status: 'Lendo arquivos...', percentage: 10 });
-                let [salesPrevYearDataRaw, salesCurrYearHistDataRaw, salesCurrMonthDataRaw, clientsDataRaw, productsDataRaw] = await Promise.all([
-                    readFile(salesPrevYearFile),
-                    readFile(salesCurrYearFile),
-                    readFile(salesCurrMonthFile),
-                    readFile(clientsFile),
-                    readFile(productsFile)
-                ]);
-
-                self.postMessage({ type: 'progress', status: 'Filtrando vendas Pepsico...', percentage: 20 });
-                const pepsicoFilter = (sale) => String(sale['OBSERVACAOFOR'] || '').trim().toUpperCase() === 'PEPSICO';
-                
-                salesPrevYearDataRaw = salesPrevYearDataRaw.filter(pepsicoFilter);
-                salesCurrYearHistDataRaw = salesCurrYearHistDataRaw.filter(pepsicoFilter);
-                salesCurrMonthDataRaw = salesCurrMonthDataRaw.filter(pepsicoFilter);
-
-                const salesCurrYearDataRaw = [...salesCurrYearHistDataRaw, ...salesCurrMonthDataRaw];
-                
-                self.postMessage({ type: 'progress', status: 'Mapeando produtos...', percentage: 25 });
-                const productMasterMap = new Map();
-                productsDataRaw.forEach(prod => {
-                    const productCode = String(prod['Código'] || '').trim();
-                    if (!productCode) return;
-                    let qtdeMaster = parseInt(prod['Qtde embalagem master(Compra)'], 10);
-                    if (isNaN(qtdeMaster) || qtdeMaster <= 0) qtdeMaster = 1;
-                    productMasterMap.set(productCode, qtdeMaster);
-                });
-
-                self.postMessage({ type: 'progress', status: 'Processando clientes...', percentage: 40 });
-                const clientMap = new Map();
-                clientsDataRaw.forEach(client => {
-                    const codCli = String(client['Código'] || '').trim();
-                    if (!codCli) return;
-
-                    const rca1 = String(client['RCA 1'] || '');
-                    const rca2 = String(client['RCA 2'] || '');
-                    
-                    const clientData = {
-                        'Código': codCli, rca1: rca1, rca2: rca2, 
-                        cidade: String(client['Nome da Cidade'] || 'N/A'),
-                        nomeCliente: String(client['Fantasia'] || client['Cliente'] || 'N/A'),
-                        bairro: String(client['Bairro'] || 'N/A'),
-                        razaoSocial: String(client['Cliente'] || 'N/A'),
-                        fantasia: String(client['Fantasia'] || 'N/A'),
-                        ramo: String(client['Descricao'] || 'N/A'),
-                        ultimaCompra: client['Data da Última Compra'],
-                        bloqueio: String(client['Bloqueio'] || '').trim().toUpperCase(),
-                    };
-                    clientMap.set(codCli, clientData);
-                });
-
-                // --- INÍCIO DA MODIFICAÇÃO: Mapa Mestre de Vendedores/Supervisores (POR DATA) ---
-                self.postMessage({ type: 'progress', status: 'Criando mapa mestre de vendedores (por data)...', percentage: 50 });
-
-                const rcaInfoMap = new Map();
-                const allSalesForRcaMap = [...salesCurrYearDataRaw, ...salesPrevYearDataRaw];
-
-                // 1. Ordenar todas as vendas pela data, da mais antiga para a mais nova
-                allSalesForRcaMap.sort((a, b) => {
-                    const dateA = parseDate(a.DTPED) || new Date(0);
-                    const dateB = parseDate(b.DTPED) || new Date(0);
-                    return dateA - dateB;
-                });
-
-                // 2. Iterar e construir o mapa. A última entrada (mais recente) irá sobrescrever as anteriores.
-                for (const row of allSalesForRcaMap) {
-                    const codusur = String(row['CODUSUR'] || '').trim();
-                    if (!codusur) continue;
-
-                    let supervisor = String(row['SUPERV'] || '').trim();
-                    const nome = String(row['NOME'] || '').trim();
-
-                    // Limpeza de dados do supervisor
-                    if (supervisor.trim().toUpperCase() === 'OSÉAS SANTOS OL') supervisor = 'OSVALDO NUNES O';
-                    const supervisorUpper = (supervisor || '').trim().toUpperCase();
-                    if (supervisorUpper === 'BALCAO' || supervisorUpper === 'BALCÃO') supervisor = 'BALCAO';
-
-                    const existingEntry = rcaInfoMap.get(codusur);
-
-                    if (!existingEntry) {
-                        // Se não existe, cria a entrada
-                        rcaInfoMap.set(codusur, {
-                            NOME: nome || 'N/A',
-                            SUPERV: supervisor || 'N/A'
-                        });
-                    } else {
-                        // Se já existe, atualiza.
-                        // Só atualiza o nome se um nome válido (não vazio) for encontrado
-                        if (nome) existingEntry.NOME = nome;
-                        // Sempre atualiza o supervisor se um supervisor válido (não vazio) for encontrado
-                        if (supervisor) existingEntry.SUPERV = supervisor;
-                    }
-                }
-                // --- FIM DA MODIFICAÇÃO ---
-
-
-                self.postMessage({ type: 'progress', status: 'Reatribuindo vendas conforme regras...', percentage: 60 });
-                const reattributeSales = (salesData) => {
-                    const balcaoSpecialClients = new Set(['6421', '7706', '9814']);
-
-                    return salesData.map(sale => {
-                        const originalCodCli = String(sale['CODCLI'] || '').trim();
-                        const originalCodUsur = String(sale['CODUSUR'] || '').trim();
-                        const newSale = { ...sale };
-
-                        // --- TRATAMENTO DE EXCEÇÕES (PRIORITÁRIO) ---
-                        // (Lógica do BALCAO e HIAGO mantida, conforme solicitado)
-
-                        // Exceção Mestra: Cliente 9569 com RCA 53
-                        if (originalCodCli === '9569' && originalCodUsur === '53') {
-                            newSale['CODUSUR'] = 'BALCAO_SP';
-                            newSale['NOME'] = 'BALCAO';
-                            newSale['SUPERV'] = 'BALCAO';
-                            newSale['CODCLI'] = '7706'; // Altera o código do cliente para fins de filtro
-                            return newSale;
-                        }
-
-                        // Exceção 1: VD Hiago (já tratado em processSalesData, CODUSUR = 1002). Não sobrescrever.
-                        if (newSale.CODUSUR === '1002') {
-                            return newSale;
-                        }
-
-                        // Exceção 2: Americanas. Identificar pelo cadastro de clientes.
-                        const clientInfoForCheck = clientMap.get(originalCodCli);
-                        if (clientInfoForCheck && (clientInfoForCheck.razaoSocial || '').toUpperCase().includes('AMERICANAS S.A')) {
-                            newSale['CODUSUR'] = '1001';
-                            newSale['NOME'] = 'AMERICANAS';
-                            newSale['SUPERV'] = 'BALCAO';
-                            return newSale;
-                        }
-
-                        // Exceção 3: Clientes específicos do Vendedor "BALCAO".
-                        if (balcaoSpecialClients.has(originalCodCli)) {
-                            newSale['CODUSUR'] = 'BALCAO_SP'; // Código especial para agrupamento
-                            newSale['NOME'] = 'BALCAO';
-                            newSale['SUPERV'] = 'BALCAO';
-                            return newSale;
-                        }
-
-                        // --- LÓGICA GERAL PARA OS DEMAIS CLIENTES ---
-                        // (Lógica de INATIVOS mantida, conforme solicitado)
-
-                        const clientData = clientMap.get(originalCodCli);
-
-                        // Regra 1: Cliente não existe no cadastro -> INATIVO
-                        if (!clientData) {
-                            newSale['CODUSUR'] = 'INATIVO';
-                            newSale['NOME'] = 'Inativo';
-                            newSale['SUPERV'] = 'INATIVOS';
-                            return newSale;
-                        }
-
-                        const rca1 = String(clientData.rca1 || '').trim();
-
-                        // Regra 2: RCA em branco ou código 53 -> INATIVO
-                        if (!rca1 || rca1 === '53') {
-                            newSale['CODUSUR'] = 'INATIVO';
-                            newSale['NOME'] = 'Inativo';
-                            newSale['SUPERV'] = 'INATIVOS';
-                            return newSale;
-                        }
-
-                        // Regra 3: Cliente tem um RCA válido, reatribui a venda para ele.
-                        // (Esta é a lógica principal que usa o Mapa Mestre)
-                        if (rcaInfoMap.has(rca1)) {
-                            const newOwnerInfo = rcaInfoMap.get(rca1);
-                            newSale['CODUSUR'] = rca1;
-                            newSale['NOME'] = newOwnerInfo.NOME; // Nome do Mapa Mestre
-                            newSale['SUPERV'] = newOwnerInfo.SUPERV; // Supervisor do Mapa Mestre
-                        } else {
-                            // Regra 4: RCA do cadastro não é um vendedor conhecido/ativo -> INATIVO
-                            newSale['CODUSUR'] = 'INATIVO';
-                            newSale['NOME'] = 'Inativo';
-                            newSale['SUPERV'] = 'INATIVOS';
-                        }
-                        
-                        return newSale;
-                    });
-                };
-                
-                const reattributedPrevYearDataRaw = reattributeSales(salesPrevYearDataRaw);
-                const reattributedCurrYearDataRaw = reattributeSales(salesCurrYearDataRaw);
-
-                self.postMessage({ type: 'progress', status: 'Cruzando dados de vendas...', percentage: 70 });
-                const processedSalesCurrYear = processSalesData(reattributedCurrYearDataRaw, clientMap, productMasterMap);
-                const processedSalesPrevYear = processSalesData(reattributedPrevYearDataRaw, clientMap, productMasterMap);
-                
-                self.postMessage({ type: 'progress', status: 'Aplicando regras de negócio...', percentage: 80 });
-                const allProcessedSales = [...processedSalesCurrYear, ...processedSalesPrevYear].sort((a, b) => {
-                    const dateA = parseDate(a.DTPED) || new Date(0);
-                    const dateB = parseDate(b.DTPED) || new Date(0);
-                    return dateA - dateB;
-                });
-
-                const clientLastBranch = new Map();
-                const clientsWith05Purchase = new Set();
-                allProcessedSales.forEach(sale => {
-                    if (sale.CODCLI && sale.FILIAL) {
-                        clientLastBranch.set(sale.CODCLI, sale.FILIAL);
-                        if (sale.FILIAL === '05') clientsWith05Purchase.add(sale.CODCLI);
-                    }
-                });
-
-                const clientBranchOverride = new Map();
-                clientsWith05Purchase.forEach(codCli => {
-                    if (clientLastBranch.get(codCli) === '08') clientBranchOverride.set(codCli, '08');
-                });
-
-                const applyBranchOverride = (salesArray) => salesArray.map(sale => {
-                    const override = clientBranchOverride.get(sale.CODCLI);
-                    return (override && sale.FILIAL === '05') ? { ...sale, FILIAL: override } : sale;
-                });
-
-                const tiagoSellersToMoveTo08 = new Set(['291', '292', '293', '284', '289', '287', '286']);
-                const applyTiagoRule = (salesArray) => salesArray.map(sale => 
-                    (sale.CODSUPERVISOR === '12' && tiagoSellersToMoveTo08.has(sale.CODUSUR)) ? { ...sale, FILIAL: '08' } : sale
-                );
-
-                const applyAllRules = (salesData) => applyTiagoRule(applyBranchOverride(salesData));
-
-                let finalSalesCurrYear = applyAllRules(processedSalesCurrYear);
-                let finalSalesPrevYear = applyAllRules(processedSalesPrevYear);
-                
-                self.postMessage({ type: 'progress', status: 'Finalizando...', percentage: 100 });
-                
-                self.postMessage({
-                    type: 'result',
-                    data: {
-                        sales_current_year: finalSalesCurrYear,
-                        sales_previous_year: finalSalesPrevYear,
-                        clients: Array.from(clientMap.values()),
-                        clientLastBranch: Object.fromEntries(clientLastBranch)
-                    }
-                });
-
-            } catch (error) {
-                self.postMessage({ type: 'error', message: error.message + (error.stack ? `\nStack: ${error.stack}`: '') });
-            }
-        };
-    </script>
-
-    <script id="report-logic-script" type="text/template">
-        const salesCurrentYear = embeddedData.sales_current_year;
-        const salesPreviousYear = embeddedData.sales_previous_year;
-        const allClientsData = embeddedData.clients;
-        const clientLastBranch = new Map(Object.entries(embeddedData.clientLastBranch || {}));
-        const allSales = [...salesCurrentYear, ...salesPreviousYear];
-        
-        const mainDashboard = document.getElementById('main-dashboard');
-        const cityView = document.getElementById('city-view');
-        const backToMainBtn = document.getElementById('back-to-main-btn');
-        const showCityBtn = document.getElementById('show-city-btn');
-
-        let charts = {};
-        let lastMonthWithSales = 0;
-        
-        function parseDate(dateString) {
-            if (!dateString) return null;
-            if (dateString instanceof Date) return !isNaN(dateString.getTime()) ? dateString : null;
-            if (typeof dateString === 'number') return new Date(Math.round((dateString - 25569) * 86400 * 1000));
-            if (typeof dateString !== 'string') return null;
-            const parts = dateString.split('/');
-            if (parts.length === 3) {
-                const [day, month, year] = parts;
-                if (day.length === 2 && month.length === 2 && year.length === 4) return new Date(`${year}-${month}-${day}T00:00:00`);
-            }
-            const isoDate = new Date(dateString);
-            return !isNaN(isoDate.getTime()) ? isoDate : null;
-        }
-        
-        function formatDate(date) {
-            if (!date) return '';
-            const d = parseDate(date);
-            if (!d || isNaN(d.getTime())) return '';
-            const userTimezoneOffset = d.getTimezoneOffset() * 60000;
-            return new Date(d.getTime() + userTimezoneOffset).toLocaleDateString('pt-BR');
-        }
-
-        const isObject = obj => obj && typeof obj === 'object' && !Array.isArray(obj);
-        const mergeDeep = (...objects) => {
-            return objects.reduce((prev, obj) => {
-                Object.keys(obj).forEach(key => {
-                    const pVal = prev[key];
-                    const oVal = obj[key];
-                    if (isObject(pVal) && isObject(oVal)) prev[key] = mergeDeep(pVal, oVal);
-                    else prev[key] = oVal;
-                });
-                return prev;
-            }, {});
-        };
-        
-        function createChart(canvasId, type, labels, chartData, optionsOverrides = {}) {
-            const container = document.getElementById(canvasId + 'Container');
-            if (!container) return;
-            if (charts[canvasId]) charts[canvasId].destroy();
-            
-            Chart.register(ChartDataLabels);
-
-            container.innerHTML = '';
-            const newCanvas = document.createElement('canvas');
-            newCanvas.id = canvasId;
-            container.appendChild(newCanvas);
-            const ctx = newCanvas.getContext('2d');
-            const professionalPalette = {
-                'current': '#06b6d4', // Ciano para o ano atual
-                'previous': '#f97316'  // Laranja para o ano anterior
-            };
-
-            let finalDatasets;
-            if (Array.isArray(chartData) && chartData.length > 0 && typeof chartData[0] === 'object' && chartData[0].hasOwnProperty('label')) {
-                finalDatasets = chartData.map((dataset) => {
-                    const yearLabel = String(dataset.label);
-                    const yearMatch = yearLabel.match(/\d{4}/);
-                    const currentYear = new Date().getFullYear();
-                    let isPrevious = false;
-
-                    if (yearMatch) {
-                        isPrevious = parseInt(yearMatch[0], 10) < currentYear;
-                    } else {
-                        isPrevious = yearLabel.includes('Anterior');
-                    }
-                    
-                    return { 
-                        ...dataset, 
-                        backgroundColor: isPrevious ? professionalPalette.previous : professionalPalette.current,
-                        borderColor: isPrevious ? professionalPalette.previous : professionalPalette.current
-                    }
-                });
-            } else {
-                 finalDatasets = [{ data: chartData, backgroundColor: professionalPalette.current }];
-            }
-            
-            let baseOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: {color: '#cbd5e1'} }, datalabels: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255, 255, 255, 0.05)'} }, x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255, 255, 255, 0.05)'} } } };
-            let typeDefaults = {};
-            if (type === 'bar') typeDefaults = { layout: { padding: { right: 30, top: 30 } }, plugins: { legend: { position: 'top', align: 'end'}, datalabels: { display: true, anchor: 'end', align: 'top', offset: 4, color: '#cbd5e1', font: { size: 9, weight: 'bold' }, formatter: (v) => (v > 1000 ? (v/1000).toFixed(0) + 'k' : v.toFixed(0)) } } };
-            const options = mergeDeep(baseOptions, typeDefaults, optionsOverrides);
-            charts[canvasId] = new Chart(ctx, { type, data: { labels, datasets: finalDatasets }, options });
-        }
-        
-        function getPositiveClientsWithNetValue(salesData) {
-            const salesByClient = new Map();
-            salesData.forEach(sale => {
-                if (!sale.CODCLI) return;
-                const clientTotal = salesByClient.get(sale.CODCLI) || 0;
-                salesByClient.set(sale.CODCLI, clientTotal + (sale.VLVENDA || 0) - (sale.VLDEVOLUCAO || 0));
-            });
-
-            let positiveClients = 0;
-            const threshold = 1;
-
-            for (const total of salesByClient.values()) {
-                if (total > threshold) {
-                    positiveClients++;
-                }
-            }
-            return positiveClients;
-        }
-
-        function updateMainDashboard() {
-            const supervisor = document.getElementById('supervisor-filter').value;
-            const vendedor = document.getElementById('vendedor-filter').value;
-            const fornecedor = document.getElementById('fornecedor-filter').value;
-            const cidade = document.getElementById('cidade-filter').value;
-            const filial = document.getElementById('filial-filter').value;
-            const ano = document.getElementById('ano-filter').value;
-            const mes = document.getElementById('mes-filter').value;
-
-            const filterFn = s => 
-                (!supervisor || s.SUPERV === supervisor) &&
-                (!vendedor || s.NOME === vendedor) &&
-                (!fornecedor || s.CODFOR === fornecedor) &&
-                (!cidade || s.CIDADE === cidade) &&
-                (!filial || s.FILIAL === filial);
-            
-            let filteredCurrentYear = salesCurrentYear.filter(filterFn);
-            let filteredPreviousYear = salesPreviousYear.filter(filterFn);
-
-            const currentDataYear = salesCurrentYear.length > 0 && parseDate(salesCurrentYear[0].DTPED) ? parseDate(salesCurrentYear[0].DTPED).getFullYear() : new Date().getFullYear();
-            
-            let maxMonthInCurrentData = -1;
-            salesCurrentYear.forEach(sale => {
-                const date = parseDate(sale.DTPED);
-                if (date && date.getFullYear() === currentDataYear && date.getMonth() > maxMonthInCurrentData) {
-                    maxMonthInCurrentData = date.getMonth();
-                }
-            });
-            lastMonthWithSales = maxMonthInCurrentData > -1 ? maxMonthInCurrentData : 11;
-
-            const vdHiagoClients = new Set(salesCurrentYear.filter(s => s.NOME === 'VD HIAGO').map(s => s.CODCLI));
-
-            let eligibleClients = allClientsData.filter(c => {
-                const codcli = c['Código'];
-                const rca1 = String(c.rca1 || '').trim();
-                const isAmericanas = (c.razaoSocial || '').toUpperCase().includes('AMERICANAS');
-                
-                if (isAmericanas || vdHiagoClients.has(codcli)) return true;
-                if (rca1 && rca1 !== '53') return true;
-                return false;
-            });
-
-            if (supervisor && supervisor !== 'INATIVOS') {
-                const rcasOfSupervisor = [...new Set(salesCurrentYear.filter(s => s.SUPERV === supervisor).map(s => s.CODUSUR))];
-                eligibleClients = allClientsData.filter(c => {
-                    const clientRca1 = String(c.rca1 || '').trim();
-                    return rcasOfSupervisor.includes(clientRca1);
-                });
-            }
-            if (vendedor) {
-                const rcaOfVendedor = [...new Set(salesCurrentYear.filter(s => s.NOME === vendedor).map(s => s.CODUSUR))];
-                eligibleClients = allClientsData.filter(c => {
-                     const clientRca1 = String(c.rca1 || '').trim();
-                    return rcaOfVendedor.includes(clientRca1);
-                });
-            }
-            if (cidade) {
-                eligibleClients = eligibleClients.filter(c => c.cidade === cidade);
-            }
-            if (filial) {
-                eligibleClients = eligibleClients.filter(c => clientLastBranch.get(c['Código']) === filial);
-            }
-            
-            const isHistoricView = (ano && ano !== 'todos' && parseInt(ano) < currentDataYear);
-            const eligibleClientsCount = isHistoricView ? 0 : eligibleClients.length;
-            
-            const referenceMonthForKPI = mes ? parseInt(mes) : (isHistoricView ? 11 : lastMonthWithSales);
-            const salesForKPICalc = (isHistoricView ? filteredPreviousYear : filteredCurrentYear).filter(s => {
-                const date = parseDate(s.DTPED);
-                return date && date.getMonth() === referenceMonthForKPI;
-            });
-
-            const attendedClientsCount = getPositiveClientsWithNetValue(salesForKPICalc);
-
-            document.getElementById('kpi-clients-attended').textContent = attendedClientsCount.toLocaleString('pt-BR');
-            const kpiClientsBaseEl = document.getElementById('kpi-clients-base');
-            kpiClientsBaseEl.classList.toggle('hidden', isHistoricView || !!mes || supervisor === 'INATIVOS');
-            if(!isHistoricView && !mes && supervisor !== 'INATIVOS'){
-                kpiClientsBaseEl.textContent = `de ${eligibleClientsCount.toLocaleString('pt-BR')} na base`;
-            }
-            
-            const monthlyDataCurrentYear = Array(12).fill(null).map(() => ({ faturamento: 0, peso: 0, bonificacao: 0, devolucao: 0, clientMix: new Map(), sales: [] }));
-            const monthlyDataPreviousYear = Array(12).fill(null).map(() => ({ faturamento: 0, peso: 0, bonificacao: 0, devolucao: 0, clientMix: new Map(), sales: [] }));
-
-            const aggregate = (data, targetArray) => {
-                data.forEach(sale => {
-                    const date = parseDate(sale.DTPED);
-                    if (!date) return;
-                    const month = date.getMonth();
-                    targetArray[month].faturamento += sale.VLVENDA;
-                    targetArray[month].peso += sale.TOTPESOLIQ;
-                    targetArray[month].bonificacao += sale.VLBONIFIC;
-                    targetArray[month].devolucao += sale.VLDEVOLUCAO;
-                    targetArray[month].sales.push(sale);
-                    if (sale.VLVENDA > 0) {
-                        if (!targetArray[month].clientMix.has(sale.CODCLI)) {
-                            targetArray[month].clientMix.set(sale.CODCLI, new Set());
-                        }
-                        targetArray[month].clientMix.get(sale.CODCLI).add(sale.PRODUTO);
-                    }
-                });
-            };
-
-            aggregate(filteredCurrentYear, monthlyDataCurrentYear);
-            aggregate(filteredPreviousYear, monthlyDataPreviousYear);
-
-            const monthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-            const currentYearLabel = currentDataYear;
-            const previousYearLabel = salesPreviousYear.length > 0 ? (parseDate(salesPreviousYear[0].DTPED) ? parseDate(salesPreviousYear[0].DTPED).getFullYear() : currentYearLabel - 1) : currentYearLabel - 1;
-            
-            let datasets = [];
-            if (mes) {
-                const monthIndex = parseInt(mes);
-                datasets.push({ label: `${monthNames[monthIndex].toUpperCase()} ${previousYearLabel}`, data: [monthlyDataPreviousYear[monthIndex].faturamento] });
-                datasets.push({ label: `${monthNames[monthIndex].toUpperCase()} ${currentYearLabel}`, data: [monthlyDataCurrentYear[monthIndex].faturamento] });
-                createChart('main-chart', 'bar', ['Comparativo Mensal'], datasets);
-            } else {
-                if (ano === 'todos' || ano === String(currentYearLabel)) {
-                    datasets.push({ label: `Ano ${currentYearLabel}`, data: monthlyDataCurrentYear.map(m => m.faturamento) });
-                }
-                if (ano === 'todos' || ano === String(previousYearLabel)) {
-                    datasets.push({ label: `Ano ${previousYearLabel}`, data: monthlyDataPreviousYear.map(m => m.faturamento) });
-                }
-                createChart('main-chart', 'bar', monthNames, datasets);
-            }
-
-            const tableBody = document.getElementById('monthly-summary-table-body');
-            const tableHead = document.querySelector('#monthly-summary-table thead tr');
-            tableBody.innerHTML = '';
-            tableHead.innerHTML = '<th class="px-2 py-2 text-left">INDICADOR</th>';
-
-            const indicators = ['POSITIVAÇÃO', 'FATURAMENTO', 'BONIFICAÇÃO', 'DEVOLUÇÃO', 'MIX/PDV', 'TICKET MÉDIO', 'TON VENDIDA'];
-            
-            if (mes) {
-                const monthIndex = parseInt(mes);
-                tableHead.innerHTML += `<th class="px-2 py-2 text-center">${monthNames[monthIndex].toUpperCase()} ${previousYearLabel}</th>`;
-                tableHead.innerHTML += `<th class="px-2 py-2 text-center">${monthNames[monthIndex].toUpperCase()} ${currentYearLabel}</th>`;
-
-                indicators.forEach(indicator => {
-                    let rowHTML = `<tr class="table-row"><td class="font-bold p-2 text-left">${indicator}</td>`;
-                    [monthlyDataPreviousYear, monthlyDataCurrentYear].forEach(yearData => {
-                        const data = yearData[monthIndex];
-                        const positivacaoCount = getPositiveClientsWithNetValue(data.sales);
-                        let value = 'R$ 0,00';
-                         switch(indicator) {
-                            case 'POSITIVAÇÃO': value = positivacaoCount.toLocaleString('pt-BR'); break;
-                            case 'FATURAMENTO': value = data.faturamento.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); break;
-                            case 'BONIFICAÇÃO': value = data.bonificacao.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); break;
-                            case 'DEVOLUÇÃO': value = `<span class="text-red-400">${data.devolucao.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>`; break;
-                            case 'MIX/PDV': 
-                                const totalMix = Array.from(data.clientMix.values()).reduce((sum, set) => sum + set.size, 0);
-                                value = (positivacaoCount > 0 ? totalMix / positivacaoCount : 0).toFixed(2);
-                                break;
-                            case 'TICKET MÉDIO': 
-                                value = (positivacaoCount > 0 ? data.faturamento / positivacaoCount : 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                                break;
-                            case 'TON VENDIDA': value = `${(data.peso / 1000).toFixed(2)} Kg`; break;
-                        }
-                        rowHTML += `<td class="px-2 py-1.5 text-center">${value}</td>`;
-                    });
-                    rowHTML += '</tr>';
-                    tableBody.innerHTML += rowHTML;
-                });
-
-            } else {
-                const yearForTable = (ano === 'todos' || !ano || ano === String(currentDataYear)) ? String(currentDataYear) : String(previousYearLabel);
-                const dataForTable = yearForTable === String(currentDataYear) ? monthlyDataCurrentYear : monthlyDataPreviousYear;
-
-                const isCurrentProcessingYear = (yearForTable === String(new Date().getFullYear()));
-                const monthsToShow = isCurrentProcessingYear ? lastMonthWithSales + 1 : 12;
-
-                for (let i = 0; i < monthsToShow; i++) {
-                    tableHead.innerHTML += `<th class="px-2 py-2 text-center">${monthNames[i]}</th>`;
-                }
-
-                indicators.forEach(indicator => {
-                    let rowHTML = `<tr class="table-row"><td class="font-bold p-2 text-left">${indicator}</td>`;
-                    for (let i = 0; i < monthsToShow; i++) {
-                        const data = dataForTable[i];
-                        const positivacaoCount = getPositiveClientsWithNetValue(data.sales);
-                        let value = 'R$ 0,00';
-                        switch(indicator) {
-                            case 'POSITIVAÇÃO': value = positivacaoCount.toLocaleString('pt-BR'); break;
-                            case 'FATURAMENTO': value = data.faturamento.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); break;
-                            case 'BONIFICAÇÃO': value = data.bonificacao.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); break;
-                            case 'DEVOLUÇÃO': value = `<span class="text-red-400">${data.devolucao.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>`; break;
-                            case 'MIX/PDV': 
-                                const totalMix = Array.from(data.clientMix.values()).reduce((sum, set) => sum + set.size, 0);
-                                value = (positivacaoCount > 0 ? totalMix / positivacaoCount : 0).toFixed(2);
-                                break;
-                            case 'TICKET MÉDIO': 
-                                value = (positivacaoCount > 0 ? data.faturamento / positivacaoCount : 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
-                                break;
-                            case 'TON VENDIDA': value = `${(data.peso / 1000).toFixed(2)} Kg`; break;
-                        }
-                        rowHTML += `<td class="px-2 py-1.5 text-center">${value}</td>`;
-                    }
-                    rowHTML += '</tr>';
-                    tableBody.innerHTML += rowHTML;
-                });
-            }
-
-            // --- DYNAMIC KPI LOGIC ---
-            const kpiRefMonth = mes ? parseInt(mes) : (isHistoricView ? 11 : lastMonthWithSales);
-            const kpiRefYearData = isHistoricView ? monthlyDataPreviousYear : monthlyDataCurrentYear;
-            
-            const currentMonthFat = kpiRefYearData[kpiRefMonth]?.faturamento || 0;
-            const currentMonthPeso = kpiRefYearData[kpiRefMonth]?.peso || 0;
-            
-            const prevYearSameMonthFat = monthlyDataPreviousYear[kpiRefMonth]?.faturamento || 0;
-            const prevYearSameMonthPeso = monthlyDataPreviousYear[kpiRefMonth]?.peso || 0;
-
-            const fatEvoVsAno = prevYearSameMonthFat > 0 ? ((currentMonthFat / prevYearSameMonthFat) - 1) * 100 : (currentMonthFat > 0 ? 100 : 0);
-            const pesoEvoVsAno = prevYearSameMonthPeso > 0 ? ((currentMonthPeso / prevYearSameMonthPeso) - 1) * 100 : (currentMonthPeso > 0 ? 100 : 0);
-            
-            const kpiEvoAnoFatEl = document.getElementById('kpi-evo-vs-ano-fat');
-            const kpiEvoAnoKgEl = document.getElementById('kpi-evo-vs-ano-kg');
-            kpiEvoAnoFatEl.textContent = `${fatEvoVsAno.toFixed(1)}%`;
-            kpiEvoAnoFatEl.classList.toggle('text-green-400', fatEvoVsAno >= 0);
-            kpiEvoAnoFatEl.classList.toggle('text-red-400', fatEvoVsAno < 0);
-            kpiEvoAnoKgEl.textContent = `${pesoEvoVsAno.toFixed(1)}%`;
-            kpiEvoAnoKgEl.classList.toggle('text-green-400', pesoEvoVsAno >= 0);
-            kpiEvoAnoKgEl.classList.toggle('text-red-400', pesoEvoVsAno < 0);
-
-            // --- Trimestral KPIs ---
-            let totalFatTri = 0, totalPesoTri = 0, monthCount = 0;
-            for (let i = 1; i <= 3; i++) {
-                let monthIndex = kpiRefMonth - i;
-                if (monthIndex >= 0) {
-                    totalFatTri += kpiRefYearData[monthIndex].faturamento;
-                    totalPesoTri += kpiRefYearData[monthIndex].peso;
-                    monthCount++;
-                }
-            }
-            const avgFatTri = monthCount > 0 ? totalFatTri / monthCount : 0;
-            const avgPesoTri = monthCount > 0 ? totalPesoTri / monthCount : 0;
-            
-            const fatEvoVsTri = avgFatTri > 0 ? ((currentMonthFat / avgFatTri) - 1) * 100 : (currentMonthFat > 0 ? 100 : 0);
-            const pesoEvoVsTri = avgPesoTri > 0 ? ((currentMonthPeso / avgPesoTri) - 1) * 100 : (currentMonthPeso > 0 ? 100 : 0);
-
-            const kpiEvoTriFatEl = document.getElementById('kpi-evo-vs-tri-fat');
-            const kpiEvoTriKgEl = document.getElementById('kpi-evo-vs-tri-kg');
-            kpiEvoTriFatEl.textContent = `${fatEvoVsTri.toFixed(1)}%`;
-            kpiEvoTriFatEl.classList.toggle('text-green-400', fatEvoVsTri >= 0);
-            kpiEvoTriFatEl.classList.toggle('text-red-400', fatEvoVsTri < 0);
-            kpiEvoTriKgEl.textContent = `${pesoEvoVsTri.toFixed(1)}%`;
-            kpiEvoTriKgEl.classList.toggle('text-green-400', pesoEvoVsTri >= 0);
-            kpiEvoTriKgEl.classList.toggle('text-red-400', pesoEvoVsTri < 0);
-
-            // Update KPI Titles
-            const monthName = mes ? monthNames[parseInt(mes)].toUpperCase().substring(0,3) : monthNames[kpiRefMonth].toUpperCase().substring(0,3);
-            document.getElementById('kpi-title-evo-ano-fat').textContent = `FAT ${monthName} vs Ano Ant.`;
-            document.getElementById('kpi-title-evo-ano-kg').textContent = `TON ${monthName} vs Ano Ant.`;
-            document.getElementById('kpi-title-evo-tri-fat').textContent = `FAT vs Trim. Ant.`;
-            document.getElementById('kpi-title-evo-tri-kg').textContent = `TON vs Trim. Ant.`;
-
-            kpiEvoTriFatEl.parentElement.style.display = mes ? 'none' : 'block';
-            kpiEvoTriKgEl.parentElement.style.display = mes ? 'none' : 'block';
-        }
-
-        function updateDependentFilters() {
-            const supervisor = document.getElementById('supervisor-filter').value;
-            const vendedor = document.getElementById('vendedor-filter').value;
-            const fornecedor = document.getElementById('fornecedor-filter').value;
-
-            // Filtra as vendas com base nos filtros primários
-            let relevantSales = allSales.filter(s => 
-                (!supervisor || s.SUPERV === supervisor) &&
-                (!vendedor || s.NOME === vendedor) &&
-                (!fornecedor || s.CODFOR === fornecedor)
-            );
-
-            // Atualiza Vendedores se apenas o Supervisor mudou
-            if (event && event.target.id === 'supervisor-filter') {
-                 const vendedorFilter = document.getElementById('vendedor-filter');
-                 const currentVendedor = vendedorFilter.value;
-                 vendedorFilter.innerHTML = '<option value="">Todos</option>';
-                 const vendedores = [...new Set(relevantSales.map(s => s.NOME).filter(Boolean))].sort();
-                 vendedores.forEach(v => vendedorFilter.innerHTML += `<option value="${v}">${v}</option>`);
-                 if (vendedores.includes(currentVendedor)) {
-                    vendedorFilter.value = currentVendedor;
-                 }
-            }
-
-            // Atualiza Cidades
-            const cidadeFilter = document.getElementById('cidade-filter');
-            const currentCidade = cidadeFilter.value;
-            cidadeFilter.innerHTML = '<option value="">Todas</option>';
-            const cidades = [...new Set(relevantSales.map(s => s.CIDADE).filter(Boolean))].sort();
-            cidades.forEach(c => cidadeFilter.innerHTML += `<option value="${c}">${c}</option>`);
-            if (cidades.includes(currentCidade)) {
-                cidadeFilter.value = currentCidade;
-            }
-
-            // Atualiza Filiais
-            const filialFilter = document.getElementById('filial-filter');
-            const currentFilial = filialFilter.value;
-            filialFilter.innerHTML = '<option value="">Todas</option>';
-            const filiais = [...new Set(relevantSales.map(s => s.FILIAL).filter(Boolean))].sort();
-            filiais.forEach(f => filialFilter.innerHTML += `<option value="${f}">${f}</option>`);
-            if (filiais.includes(currentFilial)) {
-                filialFilter.value = currentFilial;
-            }
-        }
-        
-        function handleFilterChange(event) {
-            updateDependentFilters(event);
-            updateMainDashboard();
-        }
-
-        function populateFilters() {
-            const supplierNames = {
-                '707': 'EXTRUSADOS',
-                '708': 'Ñ EXTRUSADOS',
-                '752': 'TORCIDA',
-                '1119': 'FOODS'
-            };
-
-            const supervisors = [...new Set(allSales.map(item => item.SUPERV).filter(Boolean))].sort();
-            const fornecedores = [...new Map(allSales.map(item => [item.CODFOR, item.FORNECEDOR])).entries()];
-            const anos = [...new Set(allSales.map(s => parseDate(s.DTPED)?.getFullYear()).filter(Boolean))].sort((a,b) => b-a);
-            const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-
-            const supervisorFilter = document.getElementById('supervisor-filter');
-            supervisors.forEach(s => supervisorFilter.innerHTML += `<option value="${s}">${s}</option>`);
-
-            const fornecedorFilter = document.getElementById('fornecedor-filter');
-            fornecedores.forEach(([cod, name]) => {
-                const displayName = supplierNames[cod] || name;
-                fornecedorFilter.innerHTML += `<option value="${cod}">${displayName}</option>`
-            });
-            
-            const anoFilter = document.getElementById('ano-filter');
-            anos.forEach(y => anoFilter.innerHTML += `<option value="${y}">${y}</option>`);
-            
-            const mesFilter = document.getElementById('mes-filter');
-            meses.forEach((m, i) => mesFilter.innerHTML += `<option value="${i}">${m}</option>`);
-            
-            // Popula os filtros dinâmicos com todas as opções inicialmente
-            updateDependentFilters();
-
-            // Adiciona os event listeners
-            document.getElementById('supervisor-filter').addEventListener('change', handleFilterChange);
-            document.getElementById('vendedor-filter').addEventListener('change', handleFilterChange);
-            document.getElementById('fornecedor-filter').addEventListener('change', handleFilterChange);
-            document.getElementById('cidade-filter').addEventListener('change', updateMainDashboard);
-            document.getElementById('filial-filter').addEventListener('change', updateMainDashboard);
-            document.getElementById('ano-filter').addEventListener('change', updateMainDashboard);
-            document.getElementById('mes-filter').addEventListener('change', updateMainDashboard);
-        }
-        
-        function updateCityView() {
-            const clientsWithSalesThisMonth = new Set(salesCurrentYear.filter(s => parseDate(s.DTPED)?.getMonth() === lastMonthWithSales).map(s => s.CODCLI));
-            
-            let activeClientsList = [];
-            let inactiveClientsList = [];
-
-            allClientsData.forEach(client => {
-                const codcli = String(client['Código']);
-                if (client.bloqueio === 'S') return;
-
-                if (clientsWithSalesThisMonth.has(codcli)) {
-                    const clientSales = salesCurrentYear.filter(s => s.CODCLI === codcli && parseDate(s.DTPED)?.getMonth() === lastMonthWithSales);
-                    const totalFaturamento = clientSales.reduce((sum, s) => sum + s.VLVENDA, 0);
-                    activeClientsList.push({...client, totalFaturamento});
-                } else {
-                    inactiveClientsList.push(client);
-                }
-            });
-
-            activeClientsList.sort((a, b) => b.totalFaturamento - a.totalFaturamento);
-            inactiveClientsList.sort((a, b) => (parseDate(b.ultimaCompra) || 0) - (parseDate(a.ultimaCompra) || 0));
-
-            const activeTableBody = document.getElementById('city-active-detail-table-body');
-            activeTableBody.innerHTML = activeClientsList.map(client => `
-                <tr class="table-row"><td class="p-2">${client['Código']}</td><td class="p-2">${client.fantasia || client.razaoSocial}</td><td class="p-2 text-right">${client.totalFaturamento.toLocaleString('pt-BR', {style:'currency', currency: 'BRL'})}</td><td class="p-2">${client.cidade}</td><td class="p-2">${client.bairro}</td><td class="p-2">${client.rca1 || '-'}</td><td class="p-2">${client.rca2 || '-'}</td></tr>
-            `).join('');
-
-            const inactiveTableBody = document.getElementById('city-inactive-detail-table-body');
-            inactiveTableBody.innerHTML = inactiveClientsList.map(client => `
-                <tr class="table-row"><td class="p-2">${client['Código']}</td><td class="p-2">${client.fantasia || client.razaoSocial}</td><td class="p-2">${client.cidade}</td><td class="p-2">${client.bairro}</td><td class="p-2 text-center">${formatDate(client.ultimaCompra)}</td><td class="p-2">${client.rca1 || '-'}</td><td class="p-2">${client.rca2 || '-'}</td></tr>
-            `).join('');
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            populateFilters();
-            updateMainDashboard();
-
-            showCityBtn.addEventListener('click', () => {
-                mainDashboard.classList.add('hidden');
-                cityView.classList.remove('hidden');
-                updateCityView();
-            });
-
-            backToMainBtn.addEventListener('click', () => {
-                cityView.classList.add('hidden');
-                mainDashboard.classList.remove('hidden');
-            });
-        });
-    </script>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const salesPrevYearInput = document.getElementById('sales-prev-year-input');
-            const salesCurrYearInput = document.getElementById('sales-curr-year-input');
-            const salesCurrMonthInput = document.getElementById('sales-curr-month-input');
-            const clientsFileInput = document.getElementById('clients-file-input');
-            const productsFileInput = document.getElementById('products-file-input');
-            const generateBtn = document.getElementById('generate-btn');
-            
-            const statusContainer = document.getElementById('status-container');
-            const statusText = document.getElementById('status-text');
-            const progressBar = document.getElementById('progress-bar');
-
-            const downloadContainer = document.getElementById('download-container');
-            const downloadLink = document.getElementById('download-link');
-            
-            let files = {};
-
-            const checkFiles = () => {
-                generateBtn.disabled = !(files.salesPrevYearFile && files.salesCurrYearFile && files.salesCurrMonthFile && files.clientsFile && files.productsFile);
-                downloadContainer.classList.add('hidden');
-            };
-
-            salesPrevYearInput.addEventListener('change', (e) => { files.salesPrevYearFile = e.target.files[0]; checkFiles(); });
-            salesCurrYearInput.addEventListener('change', (e) => { files.salesCurrYearFile = e.target.files[0]; checkFiles(); });
-            salesCurrMonthInput.addEventListener('change', (e) => { files.salesCurrMonthFile = e.target.files[0]; checkFiles(); });
-            clientsFileInput.addEventListener('change', (e) => { files.clientsFile = e.target.files[0]; checkFiles(); });
-            productsFileInput.addEventListener('change', (e) => { files.productsFile = e.target.files[0]; checkFiles(); });
-
-            const workerScript = document.getElementById('worker-script').textContent;
-            const workerBlob = new Blob([workerScript], { type: 'application/javascript' });
-            const workerUrl = URL.createObjectURL(workerBlob);
-            const worker = new Worker(workerUrl);
-
-            worker.onmessage = (event) => {
-                const { type, status, percentage, data, message } = event.data;
-
-                if (type === 'progress') {
-                    statusText.textContent = status;
-                    progressBar.style.width = `${percentage}%`;
-                } else if (type === 'result') {
-                    statusText.textContent = 'Relatório pronto para download!';
-                    progressBar.style.width = '100%';
-                    generateReportFile(data);
-                    downloadContainer.classList.remove('hidden');
-                    generateBtn.disabled = false;
-                } else if (type === 'error') {
-                    statusContainer.classList.remove('hidden');
-                    statusText.innerHTML = `<p class="text-red-500">Erro: ${message}</p>`;
-                    progressBar.style.width = '0%';
-                    generateBtn.disabled = false;
-                }
-            };
-
-            generateBtn.addEventListener('click', () => {
-                if (!files.salesPrevYearFile || !files.salesCurrYearFile || !files.salesCurrMonthFile || !files.clientsFile || !files.productsFile) return;
-                
-                generateBtn.disabled = true;
-                statusContainer.classList.remove('hidden');
-                statusText.textContent = 'Iniciando processamento...';
-                progressBar.style.width = '0%';
-                downloadContainer.classList.add('hidden');
-                
-                worker.postMessage({
-                    salesPrevYearFile: files.salesPrevYearFile,
-                    salesCurrYearFile: files.salesCurrYearFile,
-                    salesCurrMonthFile: files.salesCurrMonthFile,
-                    clientsFile: files.clientsFile,
-                    productsFile: files.productsFile
-                });
-            });
-
-            function generateReportFile(data) {
-                const jsonDataString = JSON.stringify(data);
-                const generationDate = new Date().toLocaleString('pt-BR');
-                const scriptLogic = document.getElementById('report-logic-script').textContent;
-                
-                const reportTemplate = `
-                    <!DOCTYPE html>
-                    <html lang="pt-br">
-                    <head>
-                        <meta charset="UTF-8">
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <title>Painel Anual de Vendas - PRIME v6.3</title>
-                        <script src="https://cdn.tailwindcss.com"><\/script>
-                        <script src="https://cdn.jsdelivr.net/npm/chart.js"><\/script>
-                        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"><\/script>
-                        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-                        <style> 
-                            body { font-family: 'Inter', sans-serif; background-color: #0d1126; color: #e2e8f0; } 
-                            .kpi-card { background-color: #1e293b; border: 1px solid #334155; }
-                            .table-header { background-color: #334155; }
-                            .table-row:nth-child(even) { background-color: #1e293b; }
-                            .sticky-header th { position: sticky; top: 0; z-index: 10; background-color: #334155; }
-                        </style>
-                    </head>
-                    <body class="antialiased">
-                        <div id="main-dashboard" class="container mx-auto p-4">
-                            <header class="mb-4">
-                                <h1 class="text-3xl font-bold text-white">ACOMPANHAMENTO DE INDICADOR</h1>
-                                <p class="text-slate-400">Gerado em: ${generationDate}</p>
-                            </header>
-
-                            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
-                                <div><label class="text-xs text-slate-400">Ano</label><select id="ano-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="todos">Todos</option></select></div>
-                                <div><label class="text-xs text-slate-400">Mês</label><select id="mes-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-                                <div><label class="text-xs text-slate-400">Filial</label><select id="filial-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option><option value="05">05</option><option value="08">08</option></select></div>
-                                <div><label class="text-xs text-slate-400">Cidade</label><select id="cidade-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option></select></div>
-                                <div><label class="text-xs text-slate-400">Supervisor</label><select id="supervisor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-                                <div><label class="text-xs text-slate-400">Vendedor</label><select id="vendedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-                                <div><label class="text-xs text-slate-400">Fornecedor</label><select id="fornecedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-                            </div>
-                            
-                            <button id="show-city-btn" class="w-full mb-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Análise por Cidade</button>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
-                                <div class="kpi-card p-4 rounded-lg text-center">
-                                    <p id="kpi-title-evo-ano-fat" class="text-sm text-slate-400">FAT Mês vs Ano Ant.</p>
-                                    <p id="kpi-evo-vs-ano-fat" class="text-2xl font-bold">0.0%</p>
-                                </div>
-                                <div class="kpi-card p-4 rounded-lg text-center">
-                                    <p id="kpi-title-evo-ano-kg" class="text-sm text-slate-400">TON Mês vs Ano Ant.</p>
-                                    <p id="kpi-evo-vs-ano-kg" class="text-2xl font-bold">0.0%</p>
-                                </div>
-                                <div class="kpi-card p-4 rounded-lg text-center">
-                                    <p id="kpi-title-evo-tri-fat" class="text-sm text-slate-400">FAT vs Trim. Ant.</p>
-                                    <p id="kpi-evo-vs-tri-fat" class="text-2xl font-bold">0.0%</p>
-                                </div>
-                                 <div class="kpi-card p-4 rounded-lg text-center">
-                                    <p id="kpi-title-evo-tri-kg" class="text-sm text-slate-400">TON vs Trim. Ant.</p>
-                                    <p id="kpi-evo-vs-tri-kg" class="text-2xl font-bold">0.0%</p>
-                                </div>
-                                <div class="kpi-card p-4 rounded-lg text-center">
-                                    <p class="text-sm text-slate-400">Clientes</p>
-                                    <p id="kpi-clients-attended" class="text-4xl font-bold text-white">0</p>
-                                    <p id="kpi-clients-base" class="text-xs text-slate-500">de 0 na base</p>
-                                </div>
-                            </div>
-
-                            <div class="bg-[#1e293b] p-4 rounded-lg border border-slate-700">
-                                <h2 class="font-bold text-center mb-2">FATURAMENTO MENSAL</h2>
-                                <div id="main-chartContainer" class="relative h-96"></div>
-                            </div>
-
-                            <div class="mt-4 overflow-x-auto">
-                                <table id="monthly-summary-table" class="min-w-full text-xs text-white">
-                                    <thead class="sticky-header">
-                                        <tr>
-                                            <th class="px-2 py-2 text-left">INDICADOR</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="monthly-summary-table-body"></tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <div id="city-view" class="hidden container mx-auto p-4">
-                            <div class="flex justify-between items-center mb-6">
-                                <div><h1 class="text-2xl font-bold text-white">Análise de Vendas por Cidade</h1></div>
-                                <button id="back-to-main-btn" class="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg">Voltar</button>
-                            </div>
-                             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
-                                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes Ativos no Mês</h3>
-                                <div class="overflow-x-auto" style="max-height: 40vh;">
-                                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3 text-right">Faturamento</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-active-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
-                                </div>
-                             </div>
-                             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
-                                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes S/ Vendas no Mês</h3>
-                                <div class="overflow-x-auto" style="max-height: 40vh;">
-                                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3 text-center">Última Compra</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-inactive-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
-                                </div>
-                             </div>
-                        </div>
-
-                        <script>
-                            const embeddedData = ${jsonDataString};
-                            ${scriptLogic}
-                        <\/script>
-                    </body>
-                    </html>
-                `;
-
-                const blob = new Blob([reportTemplate], { type: 'text/html' });
-                downloadLink.href = URL.createObjectURL(blob);
-                const today = new Date();
-                const formattedDate = today.toISOString().slice(0, 10);
-                downloadLink.download = `DASHBOARD_ANUAL_PRIME_v6.3-${formattedDate}.html`;
-            }
-        });
-    </script>
+        <button id="show-city-btn" class="w-full mb-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Análise por Cidade</button>
+
+        <!-- Main Dashboard Content -->
+        <div id="main-dashboard">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+                <div class="kpi-card p-4 rounded-lg text-center">
+                    <p id="kpi-title-evo-ano-fat" class="text-sm text-slate-400">FAT Mês vs Ano Ant.</p>
+                    <p id="kpi-evo-vs-ano-fat" class="text-2xl font-bold">0.0%</p>
+                </div>
+                <div class="kpi-card p-4 rounded-lg text-center">
+                    <p id="kpi-title-evo-ano-kg" class="text-sm text-slate-400">TON Mês vs Ano Ant.</p>
+                    <p id="kpi-evo-vs-ano-kg" class="text-2xl font-bold">0.0%</p>
+                </div>
+                <div class="kpi-card p-4 rounded-lg text-center">
+                    <p id="kpi-title-evo-tri-fat" class="text-sm text-slate-400">FAT vs Trim. Ant.</p>
+                    <p id="kpi-evo-vs-tri-fat" class="text-2xl font-bold">0.0%</p>
+                </div>
+                 <div class="kpi-card p-4 rounded-lg text-center">
+                    <p id="kpi-title-evo-tri-kg" class="text-sm text-slate-400">TON vs Trim. Ant.</p>
+                    <p id="kpi-evo-vs-tri-kg" class="text-2xl font-bold">0.0%</p>
+                </div>
+                <div class="kpi-card p-4 rounded-lg text-center">
+                    <p class="text-sm text-slate-400">Clientes Atendidos</p>
+                    <p id="kpi-clients-attended" class="text-4xl font-bold text-white">0</p>
+                    <p id="kpi-clients-base" class="text-xs text-slate-500">de 0 na base</p>
+                </div>
+            </div>
+
+            <div class="bg-[#1e293b] p-4 rounded-lg border border-slate-700 mb-4">
+                <h2 class="font-bold text-center mb-2">FATURAMENTO MENSAL</h2>
+                <div id="main-chartContainer" class="relative h-96"></div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table id="monthly-summary-table" class="min-w-full text-xs text-white">
+                    <thead class="sticky-header"><tr></tr></thead>
+                    <tbody id="monthly-summary-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- City View Content -->
+        <div id="city-view" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-white">Análise de Vendas por Cidade</h2>
+                <button id="back-to-main-btn" class="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg">Voltar</button>
+            </div>
+             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
+                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes Ativos (Selecionado)</h3>
+                <div class="overflow-x-auto" style="max-height: 40vh;">
+                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3 text-right">Faturamento</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-active-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
+                </div>
+             </div>
+             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
+                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes S/ Vendas (Selecionado)</h3>
+                <div class="overflow-x-auto" style="max-height: 40vh;">
+                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3 text-center">Última Compra</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-inactive-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
+                </div>
+             </div>
+        </div>
+    </div>
+
+    <script type="module" src="src/js/app.js"></script>
 </body>
 </html>
