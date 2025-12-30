@@ -81,7 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Handle case where profile doesn't exist (e.g. trigger failed)
             if (error && error.code === 'PGRST116') {
-                console.log('Perfil não encontrado, criando...');
+                console.log('Perfil não encontrado, tentando criar...');
+                
                 const { data: newProfile, error: insertError } = await supabase
                     .from('profiles')
                     .insert([{ id: user.id, email: user.email, status: 'pendente' }])
@@ -89,7 +90,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     .single();
 
                 if (insertError) {
-                    console.error('Erro ao criar perfil:', insertError);
+                    console.error('Erro ao criar perfil (insert):', insertError);
+                    // Se falhar o insert, assumimos que o perfil ainda não existe ou houve erro de permissão.
+                    // Em ambos os casos, não devemos bloquear o login se a intenção é mostrar "Pendente".
+                    // Tratamos como perfil pendente virtualmente para não travar na tela de login.
+                    profile = { status: 'pendente' };
+                    error = null; 
                 } else {
                     profile = newProfile;
                     error = null;
@@ -98,7 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (error) {
                 console.error('Erro ao verificar perfil:', error);
-                // Fallback or error state
+                // Se for outro erro (rede, etc), talvez devêssemos tentar novamente ou mostrar erro.
+                // Mas para garantir que o usuário não fique preso, se estiver autenticado, mandamos para pendente?
+                // Melhor mostrar login se for erro fatal de conexão.
                 showScreen('login-view');
                 return;
             }
@@ -109,17 +117,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (status === 'aprovado') {
                 showScreen('app-layout');
                 initDashboard(); // Load data
-            } else if (status === 'pendente') {
+            } else {
+                // Pendente, Bloqueado ou Desconhecido -> Tela de Espera
                 showScreen('tela-pendente');
+                
+                if (status === 'bloqueado') {
+                     const statusMsg = document.getElementById('status-text-pendente'); // Se existir elemento para msg
+                     if(statusMsg) statusMsg.textContent = "Acesso Bloqueado";
+                }
+
                 // Start polling or realtime listener for approval
                 startStatusListener(user.id);
-            } else {
-                // Blocked or other status
-                console.warn('Usuário com status:', status);
-                loginError.textContent = 'Acesso bloqueado. Entre em contato com o administrador.';
-                loginError.classList.remove('hidden');
-                showScreen('login-view');
-                await supabase.auth.signOut();
             }
 
         } catch (e) {
