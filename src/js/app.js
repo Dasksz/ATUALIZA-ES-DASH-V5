@@ -41,25 +41,96 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressBar = document.getElementById('progress-bar');
 
     // --- Auth Logic ---
+    const telaLoading = document.getElementById('tela-loading');
+    const telaPendente = document.getElementById('tela-pendente');
+
+    // UI Functions
+    const showScreen = (screenId) => {
+        // Hide all auth/app screens first
+        [loginView, telaLoading, telaPendente, appLayout].forEach(el => el?.classList.add('hidden'));
+        if (screenId) {
+            const screen = document.getElementById(screenId);
+            screen?.classList.remove('hidden');
+        }
+    };
 
     async function checkSession() {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-            showApp();
-        } else {
-            showLogin();
+        showScreen('tela-loading');
+
+        supabase.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_OUT') {
+                showScreen('login-view');
+                return;
+            }
+
+            if (session) {
+                await checkProfileStatus(session.user);
+            } else {
+                showScreen('login-view');
+            }
+        });
+    }
+
+    async function checkProfileStatus(user) {
+        try {
+            const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('status')
+                .eq('id', user.id)
+                .single();
+
+            if (error && error.code !== 'PGRST116') {
+                console.error('Erro ao verificar perfil:', error);
+                // Fallback or error state
+                showScreen('login-view');
+                return;
+            }
+
+            // Status handling
+            const status = profile?.status || 'pendente'; // Default to pending if no profile found (though trigger should create it)
+
+            if (status === 'aprovado') {
+                showScreen('app-layout');
+                initDashboard(); // Load data
+            } else if (status === 'pendente') {
+                showScreen('tela-pendente');
+                // Start polling or realtime listener for approval
+                startStatusListener(user.id);
+            } else {
+                // Blocked or other status
+                console.warn('Usuário com status:', status);
+                loginError.textContent = 'Acesso bloqueado. Entre em contato com o administrador.';
+                loginError.classList.remove('hidden');
+                showScreen('login-view');
+                await supabase.auth.signOut();
+            }
+
+        } catch (e) {
+            console.error('Erro inesperado no checkProfileStatus:', e);
+            showScreen('login-view');
         }
     }
 
-    function showLogin() {
-        loginView.classList.remove('hidden');
-        appLayout.classList.add('hidden');
-    }
+    let statusListener = null;
+    function startStatusListener(userId) {
+        if (statusListener) return; // Already listening
 
-    function showApp() {
-        loginView.classList.add('hidden');
-        appLayout.classList.remove('hidden');
-        initDashboard(); // Load data
+        statusListener = supabase
+            .channel(`public:profiles:id=eq.${userId}`)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles',
+                filter: `id=eq.${userId}`
+            }, (payload) => {
+                if (payload.new && payload.new.status === 'aprovado') {
+                    supabase.removeChannel(statusListener);
+                    statusListener = null;
+                    showScreen('app-layout');
+                    initDashboard();
+                }
+            })
+            .subscribe();
     }
 
     googleLoginBtn.addEventListener('click', async () => {
@@ -68,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.href // Redirect back to this page
+                redirectTo: window.location.href
             }
         });
 
@@ -76,12 +147,15 @@ document.addEventListener('DOMContentLoaded', () => {
             loginError.textContent = 'Erro ao iniciar login: ' + error.message;
             loginError.classList.remove('hidden');
         }
-        // Redirect happens automatically
     });
 
     logoutBtn.addEventListener('click', async () => {
+        if(statusListener) {
+            supabase.removeChannel(statusListener);
+            statusListener = null;
+        }
         await supabase.auth.signOut();
-        showLogin();
+        // onAuthStateChange handles the UI update
     });
 
     // Check session on start
@@ -130,9 +204,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Uploader Logic ---
     let files = {};
 
+    // Elements for Credentials
+    const supabaseUrlInput = document.getElementById('supabase-url-input');
+    const supabaseKeyInput = document.getElementById('supabase-key-input');
+
     const checkFiles = () => {
-        generateBtn.disabled = !(files.salesPrevYearFile && files.salesCurrYearFile && files.salesCurrMonthFile && files.clientsFile && files.productsFile);
+        const hasCredentials = supabaseUrlInput.value.trim() !== '' && supabaseKeyInput.value.trim() !== '';
+        const hasFiles = files.salesPrevYearFile && files.salesCurrYearFile && files.salesCurrMonthFile && files.clientsFile && files.productsFile;
+        generateBtn.disabled = !(hasFiles && hasCredentials);
     };
+
+    if(supabaseUrlInput) supabaseUrlInput.addEventListener('input', checkFiles);
+    if(supabaseKeyInput) supabaseKeyInput.addEventListener('input', checkFiles);
 
     if(salesPrevYearInput) salesPrevYearInput.addEventListener('change', (e) => { files.salesPrevYearFile = e.target.files[0]; checkFiles(); });
     if(salesCurrYearInput) salesCurrYearInput.addEventListener('change', (e) => { files.salesCurrYearFile = e.target.files[0]; checkFiles(); });
@@ -142,6 +225,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(generateBtn) generateBtn.addEventListener('click', () => {
         if (!files.salesPrevYearFile || !files.salesCurrYearFile || !files.salesCurrMonthFile || !files.clientsFile || !files.productsFile) return;
+
+        const supabaseUrl = supabaseUrlInput.value.trim();
+        const supabaseKey = supabaseKeyInput.value.trim();
+
+        if (!supabaseUrl || !supabaseKey) {
+            alert('Por favor, informe a URL e a Chave Secreta do Supabase.');
+            return;
+        }
 
         generateBtn.disabled = true;
         statusContainer.classList.remove('hidden');
@@ -155,7 +246,11 @@ document.addEventListener('DOMContentLoaded', () => {
             salesCurrYearFile: files.salesCurrYearFile,
             salesCurrMonthFile: files.salesCurrMonthFile,
             clientsFile: files.clientsFile,
-            productsFile: files.productsFile
+            productsFile: files.productsFile,
+            supabaseCredentials: {
+                url: supabaseUrl,
+                key: supabaseKey
+            }
         });
 
         worker.onmessage = (event) => {
