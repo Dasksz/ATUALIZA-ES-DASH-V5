@@ -56,23 +56,28 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     async function checkSession() {
+        console.log('Iniciando verificação de sessão...');
         showScreen('tela-loading');
 
         supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('Auth Event:', event);
             if (event === 'SIGNED_OUT') {
                 showScreen('login-view');
                 return;
             }
 
             if (session) {
+                console.log('Sessão encontrada para usuário:', session.user.email);
                 await checkProfileStatus(session.user);
             } else {
+                console.log('Nenhuma sessão ativa.');
                 showScreen('login-view');
             }
         });
     }
 
     async function checkProfileStatus(user) {
+        console.log('Verificando perfil para ID:', user.id);
         try {
             let { data: profile, error } = await supabase
                 .from('profiles')
@@ -80,9 +85,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 .eq('id', user.id)
                 .single();
 
+            if (error) {
+                console.warn('Erro ao buscar perfil:', error.code, error.message);
+            }
+
             // Handle case where profile doesn't exist (e.g. trigger failed)
             if (error && error.code === 'PGRST116') {
-                console.log('Perfil não encontrado, tentando criar...');
+                console.log('Perfil não encontrado (PGRST116), tentando criar manualmente...');
                 
                 const { data: newProfile, error: insertError } = await supabase
                     .from('profiles')
@@ -91,39 +100,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     .single();
 
                 if (insertError) {
-                    console.error('Erro ao criar perfil (insert):', insertError);
-                    // Se falhar o insert, assumimos que o perfil ainda não existe ou houve erro de permissão.
-                    // Em ambos os casos, não devemos bloquear o login se a intenção é mostrar "Pendente".
-                    // Tratamos como perfil pendente virtualmente para não travar na tela de login.
+                    console.error('FALHA ao criar perfil (insert):', insertError);
+                    // Fallback visual
                     profile = { status: 'pendente' };
                     error = null; 
                 } else {
+                    console.log('Perfil criado com sucesso:', newProfile);
                     profile = newProfile;
                     error = null;
                 }
             }
 
             if (error) {
-                console.error('Erro ao verificar perfil:', error);
-                // Se for outro erro (rede, etc), talvez devêssemos tentar novamente ou mostrar erro.
-                // Mas para garantir que o usuário não fique preso, se estiver autenticado, mandamos para pendente?
-                // Melhor mostrar login se for erro fatal de conexão.
+                console.error('Erro crítico ao verificar perfil (não recuperável):', error);
                 showScreen('login-view');
                 return;
             }
 
             // Status handling
             const status = profile?.status || 'pendente';
+            console.log('Status do perfil:', status);
 
             if (status === 'aprovado') {
+                console.log('Acesso aprovado. Carregando dashboard...');
                 showScreen('app-layout');
                 initDashboard(); // Load data
             } else {
+                console.log('Acesso pendente ou bloqueado. Redirecionando para tela de espera.');
                 // Pendente, Bloqueado ou Desconhecido -> Tela de Espera
                 showScreen('tela-pendente');
                 
                 if (status === 'bloqueado') {
-                     const statusMsg = document.getElementById('status-text-pendente'); // Se existir elemento para msg
+                     const statusMsg = document.getElementById('status-text-pendente'); 
                      if(statusMsg) statusMsg.textContent = "Acesso Bloqueado";
                 }
 
@@ -132,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
         } catch (e) {
-            console.error('Erro inesperado no checkProfileStatus:', e);
+            console.error('EXCEÇÃO inesperada no checkProfileStatus:', e);
             showScreen('login-view');
         }
     }
