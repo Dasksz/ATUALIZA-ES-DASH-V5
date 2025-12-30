@@ -7,8 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="src/css/styles.css">
     <style>
         body { 
             font-family: 'Inter', sans-serif; 
@@ -41,11 +42,166 @@
 </head>
 <body class="min-h-screen">
 
-    <!-- Upload Screen -->
-    <div id="upload-screen" class="flex flex-col items-center justify-center min-h-screen p-4">
-        <div class="bg-[#1d2347] rounded-lg shadow-2xl max-w-lg w-full p-8 border border-slate-700">
-            <h1 class="text-2xl font-bold text-white mb-4 text-center">Painel de Vendas - PRIME v7.0</h1>
-            <p class="text-slate-400 mb-6 text-center">Carregue os dados para o Supabase ou acesse o Dashboard se já estiver atualizado.</p>
+    <!-- Tela de Login (Gatekeeper) -->
+    <div id="login-view" class="flex-center-overlay z-[2000]" style="background-color: #0d1126;">
+        <div class="gatekeeper-card bg-[#1d2347] border border-slate-700 text-slate-300">
+            <!-- Logo placeholder -->
+            <div class="h-24 w-24 bg-slate-700 rounded-full mx-auto mb-6 flex items-center justify-center text-3xl font-bold text-white border-4 border-slate-600">P</div>
+
+            <h1 class="text-2xl font-bold text-white mb-2">Acesso Restrito</h1>
+            <p class="text-slate-400 mb-6">Este é um sistema privado.</p>
+
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <input type="email" id="email" placeholder="Email" class="w-full p-3 rounded bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-teal-500" required>
+                </div>
+                <div>
+                    <input type="password" id="password" placeholder="Senha" class="w-full p-3 rounded bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-teal-500" required>
+                </div>
+                <button type="submit" class="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-4 rounded transition duration-200">Entrar</button>
+            </form>
+            <p id="login-error" class="text-red-500 mt-4 text-sm hidden"></p>
+        </div>
+    </div>
+
+    <!-- Layout Principal (Sidebar + Conteúdo) -->
+    <div id="app-layout" class="hidden flex h-screen overflow-hidden">
+
+        <!-- Sidebar -->
+        <aside id="side-menu" class="w-64 bg-[#1d2347] border-r border-slate-700 flex flex-col transition-transform transform -translate-x-full md:translate-x-0 fixed md:relative z-50 h-full">
+            <div class="p-6 border-b border-slate-700 flex justify-between items-center">
+                <span class="text-xl font-bold text-white">Menu</span>
+                <button id="close-sidebar-mobile" class="md:hidden text-slate-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <nav class="flex-1 overflow-y-auto py-4">
+                <ul class="space-y-2 px-4">
+                    <li>
+                        <button id="nav-dashboard" class="w-full flex items-center p-2 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors">
+                            <span class="ml-3">Dashboard</span>
+                        </button>
+                    </li>
+                    <li>
+                        <button id="nav-uploader" class="w-full flex items-center p-2 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors">
+                            <span class="ml-3">Uploader (Admin)</span>
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="p-4 border-t border-slate-700">
+                <button id="logout-btn" class="w-full flex items-center p-2 text-slate-400 rounded-lg hover:bg-red-900/20 hover:text-red-400 transition-colors">
+                    <span class="ml-3">Sair</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col h-full overflow-hidden relative">
+            <!-- Mobile Header for Sidebar Toggle -->
+            <header class="md:hidden bg-[#1d2347] border-b border-slate-700 p-4 flex items-center">
+                <button id="open-sidebar-mobile" class="text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+                <h1 class="ml-4 text-lg font-bold text-white">PRIME v7.0</h1>
+            </header>
+
+            <!-- Content Scrollable Area -->
+            <main class="flex-1 overflow-y-auto bg-[#0d1126] p-4">
+
+                <!-- Dashboard Container -->
+                <div id="dashboard-container" class="container mx-auto">
+                    <!-- Filters & Header -->
+                    <header class="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h1 class="text-3xl font-bold text-white">ACOMPANHAMENTO DE INDICADOR</h1>
+                            <p class="text-slate-400 text-sm">Dados obtidos via Supabase</p>
+                        </div>
+                    </header>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
+                        <div><label class="text-xs text-slate-400">Ano</label><select id="ano-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="todos">Todos</option></select></div>
+                        <div><label class="text-xs text-slate-400">Mês</label><select id="mes-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todos</option></select></div>
+                        <div><label class="text-xs text-slate-400">Filial</label><select id="filial-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todas</option><option value="05">05</option><option value="08">08</option></select></div>
+                        <div><label class="text-xs text-slate-400">Cidade</label><select id="cidade-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todas</option></select></div>
+                        <div><label class="text-xs text-slate-400">Supervisor</label><select id="supervisor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todos</option></select></div>
+                        <div><label class="text-xs text-slate-400">Vendedor</label><select id="vendedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todos</option></select></div>
+                        <div><label class="text-xs text-slate-400">Fornecedor</label><select id="fornecedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm text-white"><option value="">Todos</option></select></div>
+                    </div>
+
+                    <button id="show-city-btn" class="w-full mb-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Análise por Cidade</button>
+
+                    <!-- Main Dashboard Content -->
+                    <div id="main-dashboard-content">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+                            <div class="kpi-card p-4 rounded-lg text-center">
+                                <p id="kpi-title-evo-ano-fat" class="text-sm text-slate-400">FAT Mês vs Ano Ant.</p>
+                                <p id="kpi-evo-vs-ano-fat" class="text-2xl font-bold text-white">0.0%</p>
+                            </div>
+                            <div class="kpi-card p-4 rounded-lg text-center">
+                                <p id="kpi-title-evo-ano-kg" class="text-sm text-slate-400">TON Mês vs Ano Ant.</p>
+                                <p id="kpi-evo-vs-ano-kg" class="text-2xl font-bold text-white">0.0%</p>
+                            </div>
+                            <div class="kpi-card p-4 rounded-lg text-center">
+                                <p id="kpi-title-evo-tri-fat" class="text-sm text-slate-400">FAT vs Trim. Ant.</p>
+                                <p id="kpi-evo-vs-tri-fat" class="text-2xl font-bold text-white">0.0%</p>
+                            </div>
+                             <div class="kpi-card p-4 rounded-lg text-center">
+                                <p id="kpi-title-evo-tri-kg" class="text-sm text-slate-400">TON vs Trim. Ant.</p>
+                                <p id="kpi-evo-vs-tri-kg" class="text-2xl font-bold text-white">0.0%</p>
+                            </div>
+                            <div class="kpi-card p-4 rounded-lg text-center">
+                                <p class="text-sm text-slate-400">Clientes Atendidos</p>
+                                <p id="kpi-clients-attended" class="text-4xl font-bold text-white">0</p>
+                                <p id="kpi-clients-base" class="text-xs text-slate-500">de 0 na base</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-[#1e293b] p-4 rounded-lg border border-slate-700 mb-4">
+                            <h2 class="font-bold text-center mb-2 text-white">FATURAMENTO MENSAL</h2>
+                            <div id="main-chartContainer" class="relative h-96"></div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table id="monthly-summary-table" class="min-w-full text-xs text-white">
+                                <thead class="sticky-header"><tr></tr></thead>
+                                <tbody id="monthly-summary-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- City View Content -->
+                    <div id="city-view" class="hidden">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-white">Análise de Vendas por Cidade</h2>
+                            <button id="back-to-main-btn" class="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg">Voltar</button>
+                        </div>
+                         <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
+                            <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes Ativos (Selecionado)</h3>
+                            <div class="overflow-x-auto" style="max-height: 40vh;">
+                                <table class="min-w-full text-sm text-left text-slate-300"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3 text-right">Faturamento</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-active-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
+                            </div>
+                         </div>
+                         <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
+                            <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes S/ Vendas (Selecionado)</h3>
+                            <div class="overflow-x-auto" style="max-height: 40vh;">
+                                <table class="min-w-full text-sm text-left text-slate-300"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3 text-center">Última Compra</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-inactive-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
+                            </div>
+                         </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal Uploader (Admin) -->
+    <div id="uploader-modal" class="modal-overlay hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[3000]">
+        <div class="bg-[#1d2347] rounded-lg shadow-2xl max-w-lg w-full p-8 border border-slate-700 relative">
+            <button id="close-uploader-btn" class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl">&times;</button>
+            <h1 class="text-2xl font-bold text-white mb-4 text-center">Atualizar Base de Dados</h1>
+            <p class="text-slate-400 mb-6 text-center text-sm">Carregue os arquivos para atualizar o Supabase.</p>
 
             <div class="space-y-4 mb-6">
                 <div><label class="file-input-label">1. Vendas Ano Anterior (Completo)</label><input type="file" id="sales-prev-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
@@ -55,100 +211,14 @@
                 <div><label class="file-input-label">5. Cadastro de Produtos</label><input type="file" id="products-file-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
             </div>
 
-            <div class="flex gap-4">
-                <button id="generate-btn" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-slate-600" disabled>Atualizar Base</button>
-                <button id="view-dash-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Acessar Dashboard</button>
-            </div>
+            <button id="generate-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg disabled:bg-slate-600" disabled>Atualizar Base</button>
 
             <div id="status-container" class="hidden mt-6 text-sm h-12 flex flex-col justify-center">
-                <p id="status-text" class="mb-2 text-center"></p>
+                <p id="status-text" class="mb-2 text-center text-slate-300"></p>
                 <div class="progress-bar-container w-full h-2">
                     <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Dashboard Screen -->
-    <div id="dashboard-container" class="hidden container mx-auto p-4">
-        <!-- Header & Filters -->
-        <header class="mb-4 flex justify-between items-center">
-            <div>
-                <h1 class="text-3xl font-bold text-white">ACOMPANHAMENTO DE INDICADOR</h1>
-                <p class="text-slate-400 text-sm">Dados obtidos via Supabase</p>
-            </div>
-            <button onclick="location.reload()" class="text-sm bg-slate-700 px-3 py-1 rounded hover:bg-slate-600">Sair/Trocar Arquivos</button>
-        </header>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 mb-4">
-            <div><label class="text-xs text-slate-400">Ano</label><select id="ano-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="todos">Todos</option></select></div>
-            <div><label class="text-xs text-slate-400">Mês</label><select id="mes-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-            <div><label class="text-xs text-slate-400">Filial</label><select id="filial-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option></select></div>
-            <div><label class="text-xs text-slate-400">Cidade</label><select id="cidade-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todas</option></select></div>
-            <div><label class="text-xs text-slate-400">Supervisor</label><select id="supervisor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-            <div><label class="text-xs text-slate-400">Vendedor</label><select id="vendedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-            <div><label class="text-xs text-slate-400">Fornecedor</label><select id="fornecedor-filter" class="w-full bg-slate-700 border border-slate-600 rounded p-1 text-sm"><option value="">Todos</option></select></div>
-        </div>
-        
-        <button id="show-city-btn" class="w-full mb-4 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded-lg">Análise por Cidade</button>
-
-        <!-- Main Dashboard Content -->
-        <div id="main-dashboard">
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
-                <div class="kpi-card p-4 rounded-lg text-center">
-                    <p id="kpi-title-evo-ano-fat" class="text-sm text-slate-400">FAT Mês vs Ano Ant.</p>
-                    <p id="kpi-evo-vs-ano-fat" class="text-2xl font-bold">0.0%</p>
-                </div>
-                <div class="kpi-card p-4 rounded-lg text-center">
-                    <p id="kpi-title-evo-ano-kg" class="text-sm text-slate-400">TON Mês vs Ano Ant.</p>
-                    <p id="kpi-evo-vs-ano-kg" class="text-2xl font-bold">0.0%</p>
-                </div>
-                <div class="kpi-card p-4 rounded-lg text-center">
-                    <p id="kpi-title-evo-tri-fat" class="text-sm text-slate-400">FAT vs Trim. Ant.</p>
-                    <p id="kpi-evo-vs-tri-fat" class="text-2xl font-bold">0.0%</p>
-                </div>
-                 <div class="kpi-card p-4 rounded-lg text-center">
-                    <p id="kpi-title-evo-tri-kg" class="text-sm text-slate-400">TON vs Trim. Ant.</p>
-                    <p id="kpi-evo-vs-tri-kg" class="text-2xl font-bold">0.0%</p>
-                </div>
-                <div class="kpi-card p-4 rounded-lg text-center">
-                    <p class="text-sm text-slate-400">Clientes Atendidos</p>
-                    <p id="kpi-clients-attended" class="text-4xl font-bold text-white">0</p>
-                    <p id="kpi-clients-base" class="text-xs text-slate-500">de 0 na base</p>
-                </div>
-            </div>
-
-            <div class="bg-[#1e293b] p-4 rounded-lg border border-slate-700 mb-4">
-                <h2 class="font-bold text-center mb-2">FATURAMENTO MENSAL</h2>
-                <div id="main-chartContainer" class="relative h-96"></div>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table id="monthly-summary-table" class="min-w-full text-xs text-white">
-                    <thead class="sticky-header"><tr></tr></thead>
-                    <tbody id="monthly-summary-table-body"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- City View Content -->
-        <div id="city-view" class="hidden">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-white">Análise de Vendas por Cidade</h2>
-                <button id="back-to-main-btn" class="bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg">Voltar</button>
-            </div>
-             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
-                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes Ativos (Selecionado)</h3>
-                <div class="overflow-x-auto" style="max-height: 40vh;">
-                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3 text-right">Faturamento</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-active-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
-                </div>
-             </div>
-             <div class="bg-[#1d2347] p-4 rounded-lg mt-6 border border-slate-700">
-                <h3 class="text-lg font-semibold text-white mb-4 px-4">Clientes S/ Vendas (Selecionado)</h3>
-                <div class="overflow-x-auto" style="max-height: 40vh;">
-                    <table class="min-w-full text-sm text-left"><thead class="text-xs text-slate-300 uppercase sticky-header"><tr><th class="px-4 py-3">Código</th><th class="px-4 py-3">Nome Fantasia</th><th class="px-4 py-3">Cidade</th><th class="px-4 py-3">Bairro</th><th class="px-4 py-3 text-center">Última Compra</th><th class="px-4 py-3">RCA 1</th><th class="px-4 py-3">RCA 2</th></tr></thead><tbody id="city-inactive-detail-table-body" class="divide-y divide-slate-700"></tbody></table>
-                </div>
-             </div>
         </div>
     </div>
 
