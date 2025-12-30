@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const googleLoginBtn = document.getElementById('google-login-btn');
     const loginError = document.getElementById('login-error');
     const logoutBtn = document.getElementById('logout-btn');
+    const logoutBtnPendente = document.getElementById('logout-btn-pendente');
 
     // Sidebar
     const sideMenu = document.getElementById('side-menu');
@@ -174,14 +175,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    logoutBtn.addEventListener('click', async () => {
+    const handleLogout = async () => {
         if(statusListener) {
             supabase.removeChannel(statusListener);
             statusListener = null;
         }
         await supabase.auth.signOut();
         // onAuthStateChange handles the UI update
-    });
+    };
+
+    logoutBtn.addEventListener('click', handleLogout);
+    if(logoutBtnPendente) logoutBtnPendente.addEventListener('click', handleLogout);
 
     // Check session on start
     checkSession();
