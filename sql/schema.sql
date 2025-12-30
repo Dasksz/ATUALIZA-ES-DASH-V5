@@ -135,13 +135,14 @@ create policy "Users can update own profile" on public.profiles for update using
 
 -- Trigger for Profile Creation
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger language plpgsql security definer
+set search_path = public as $$
 begin
   insert into public.profiles (id, email, status)
   values (new.id, new.email, 'pendente');
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
 -- Trigger logic needs to be executed in Supabase SQL editor as triggers on auth.users require admin privileges not available in migration scripts usually
 -- drop trigger if exists on_auth_user_created on auth.users;
