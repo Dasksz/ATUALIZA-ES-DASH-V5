@@ -59,6 +59,28 @@
         </div>
     </div>
 
+    <!-- Tela de Carregamento -->
+    <div id="tela-loading" class="flex-center-overlay hidden z-[2001]" style="background-color: #0d1126;">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mb-4"></div>
+            <h2 class="text-xl font-bold text-white">Carregando...</h2>
+            <p class="text-slate-400">Verificando suas credenciais</p>
+        </div>
+    </div>
+
+    <!-- Tela Pendente (Aprovação) -->
+    <div id="tela-pendente" class="flex-center-overlay hidden z-[2001]" style="background-color: #0d1126;">
+        <div class="gatekeeper-card bg-[#1d2347] border border-slate-700 text-slate-300 p-8 rounded-lg shadow-2xl max-w-sm w-full text-center">
+            <div class="mb-6">
+                <svg class="w-16 h-16 text-yellow-500 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-2">Acesso Pendente</h2>
+            <p class="text-slate-400 mb-6">Seu cadastro está aguardando aprovação de um administrador. Você será notificado assim que o acesso for liberado.</p>
+            <div class="animate-pulse text-sm text-cyan-400">Aguardando liberação...</div>
+            <button class="logout mt-8 text-slate-500 hover:text-white underline text-sm">Sair</button>
+        </div>
+    </div>
+
     <!-- Layout Principal (Sidebar + Conteúdo) -->
     <div id="app-layout" class="hidden flex h-screen overflow-hidden">
 
@@ -199,6 +221,18 @@
             <p class="text-slate-400 mb-6 text-center text-sm">Carregue os arquivos para atualizar o Supabase.</p>
 
             <div class="space-y-4 mb-6">
+                <!-- Supabase Credentials Inputs -->
+                <div class="grid grid-cols-2 gap-4 mb-4 border-b border-slate-700 pb-4">
+                    <div class="col-span-2 md:col-span-1">
+                        <label class="block text-xs font-bold text-slate-500 mb-1">SUPABASE URL</label>
+                        <input type="text" id="supabase-url-input" placeholder="https://..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+                    </div>
+                    <div class="col-span-2 md:col-span-1">
+                        <label class="block text-xs font-bold text-slate-500 mb-1">SUPABASE KEY (SECRET)</label>
+                        <input type="password" id="supabase-key-input" placeholder="service_role secret..." class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white focus:border-cyan-500 focus:outline-none">
+                    </div>
+                </div>
+
                 <div><label class="file-input-label">1. Vendas Ano Anterior (Completo)</label><input type="file" id="sales-prev-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
                 <div><label class="file-input-label">2. Vendas Ano Atual (Histórico)</label><input type="file" id="sales-curr-year-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>
                 <div><label class="file-input-label">3. Vendas Mês Atual (Atualização)</label><input type="file" id="sales-curr-month-input" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600" accept=".csv, .xls, .xlsx"/></div>

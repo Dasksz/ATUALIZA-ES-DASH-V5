@@ -1,9 +1,7 @@
 self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
 self.importScripts('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js');
 
-const SUPABASE_URL = 'https://vawrdqreibhlfsfvxbpv.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhd3JkcXJlaWJobGZzZnZ4YnB2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjcwNzg1MTAsImV4cCI6MjA4MjY1NDUxMH0.-mAobZK_dc3QOwey3Z8NbrtybWPoPRfBqW_IN0gehl8';
-const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase;
 
 function parseDate(dateString) {
     if (!dateString) return null;
@@ -167,9 +165,16 @@ async function batchInsert(table, data) {
 }
 
 self.onmessage = async (event) => {
-    const { salesPrevYearFile, salesCurrYearFile, salesCurrMonthFile, clientsFile, productsFile } = event.data;
+    const { salesPrevYearFile, salesCurrYearFile, salesCurrMonthFile, clientsFile, productsFile, supabaseCredentials } = event.data;
 
     try {
+        if (!supabaseCredentials || !supabaseCredentials.url || !supabaseCredentials.key) {
+             throw new Error("Credenciais do Supabase não fornecidas.");
+        }
+
+        // Initialize Supabase with provided credentials
+        supabase = self.supabase.createClient(supabaseCredentials.url, supabaseCredentials.key);
+
         // Step 0: Clear Data (Assume user wants full refresh)
         self.postMessage({ type: 'progress', status: 'Limpando banco de dados...', percentage: 0 });
         const { error: rpcError } = await supabase.rpc('clear_all_data');
