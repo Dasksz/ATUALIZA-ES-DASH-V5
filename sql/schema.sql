@@ -124,13 +124,23 @@ alter table public.data_clients enable row level security;
 alter table public.profiles enable row level security;
 
 -- Policies
+drop policy if exists "Enable access for all users" on public.data_detailed;
 create policy "Enable access for all users" on public.data_detailed for all using (true) with check (true);
+
+drop policy if exists "Enable access for all users" on public.data_history;
 create policy "Enable access for all users" on public.data_history for all using (true) with check (true);
+
+drop policy if exists "Enable access for all users" on public.data_clients;
 create policy "Enable access for all users" on public.data_clients for all using (true) with check (true);
 
 -- Profile Policies
+drop policy if exists "Public profiles are viewable by everyone" on public.profiles;
 create policy "Public profiles are viewable by everyone" on public.profiles for select using (true);
+
+drop policy if exists "Users can insert their own profile" on public.profiles;
 create policy "Users can insert their own profile" on public.profiles for insert with check (auth.uid() = id);
+
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile" on public.profiles for update using (auth.uid() = id);
 
 -- Trigger for Profile Creation
