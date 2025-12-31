@@ -6,12 +6,15 @@
 -- Note: 'data_detailed' and 'data_history' are the underlying tables for 'all_sales' view.
 
 -- Detailed Data
+-- Detailed Data (Covering Index for Dashboard Metrics)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_dtped_composite
-ON public.data_detailed (dtped, filial, cidade, superv, nome, codfor);
+ON public.data_detailed (dtped, filial, cidade, superv, nome, codfor)
+INCLUDE (vlvenda, vldevolucao, totpesoliq, vlbonific, codcli, codusur);
 
--- History Data
+-- History Data (Covering Index for Dashboard Metrics)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_dtped_composite
-ON public.data_history (dtped, filial, cidade, superv, nome, codfor);
+ON public.data_history (dtped, filial, cidade, superv, nome, codfor)
+INCLUDE (vlvenda, vldevolucao, totpesoliq, vlbonific, codcli, codusur);
 
 
 -- 2. Indexes for Loose Index Scans (Filters)
@@ -21,6 +24,10 @@ ON public.data_history (dtped, filial, cidade, superv, nome, codfor);
 -- Supervisors
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_superv_btree ON public.data_detailed (superv);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_superv_btree ON public.data_history (superv);
+
+-- RCA Codes (codusur) - needed for Base Clients KPI
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_codusur_btree ON public.data_detailed (codusur);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_codusur_btree ON public.data_history (codusur);
 
 -- Vendedores (nome)
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_nome_btree ON public.data_detailed (nome);
