@@ -99,12 +99,6 @@ const processSalesData = (rawData, clientMap, productMasterMap) => {
         const supervisorUpper = (supervisorName || '').trim().toUpperCase();
         if (supervisorUpper === 'BALCAO' || supervisorUpper === 'BALCÃO') supervisorName = 'BALCAO';
 
-        if (pedido.startsWith('120')) {
-            vendorName = 'VD HIAGO';
-            supervisorName = 'HIAGO ASSUNCAO';
-            codUsur = '1002';
-        }
-
         let dtPed = rawRow['DTPED'];
         const dtSaida = rawRow['DTSAIDA'];
         const parsedDtPed = parseDate(dtPed);
@@ -312,54 +306,86 @@ self.onmessage = async (event) => {
 
         self.postMessage({ type: 'progress', status: 'Processando e Reatribuindo vendas...', percentage: 50 });
         const reattributeSales = (salesData) => {
-            const balcaoSpecialClients = new Set(['6421', '7706', '9814']);
+            const balcaoSpecialClients = new Set(['6421', '7706', '9814', '11405', '9763']);
             return salesData.map(sale => {
                 const originalCodCli = String(sale['CODCLI'] || '').trim();
                 const originalCodUsur = String(sale['CODUSUR'] || '').trim();
                 const newSale = { ...sale };
 
+                // 1. Existing Exception: 9569/53 -> Balcao
                 if (originalCodCli === '9569' && originalCodUsur === '53') {
                     newSale['CODUSUR'] = 'BALCAO_SP'; newSale['NOME'] = 'BALCAO'; newSale['SUPERV'] = 'BALCAO'; newSale['CODCLI'] = '7706'; return newSale;
                 }
-                if (newSale.CODUSUR === '1002') return newSale;
 
+                // 2. Balcao Special Clients
                 if (balcaoSpecialClients.has(originalCodCli)) {
                     newSale['CODUSUR'] = 'BALCAO_SP'; newSale['NOME'] = 'BALCAO'; newSale['SUPERV'] = 'BALCAO'; return newSale;
                 }
 
+                // Prepare City Map Logic (Used for Americanas and Inactives/RCA53)
+                const municipio = String(newSale['MUNICIPIO'] || '').trim().toUpperCase();
+                const predominantFilial = cityPredominantFilialMap.get(municipio);
+                let mapSupervisor = null;
+                let mapFilial = null;
+
+                if (predominantFilial) {
+                    mapSupervisor = branchSupervisorMap.get(predominantFilial);
+                    mapFilial = predominantFilial;
+                }
+
                 const clientData = clientMap.get(originalCodCli);
 
-                // Logic for INACTIVE Clients (Not in clientMap)
-                if (!clientData) {
-                    const municipio = String(newSale['MUNICIPIO'] || '').trim().toUpperCase();
-                    const predominantFilial = cityPredominantFilialMap.get(municipio);
+                // 3. Americanas Logic
+                // Check name in clientData or raw row
+                const rawName = String(newSale['CLIENTE'] || newSale['NOMECLIENTE'] || newSale['RAZAOSOCIAL'] || '').toUpperCase();
+                const clientName = clientData ? clientData.nomeCliente.toUpperCase() : rawName;
 
-                    if (predominantFilial) {
-                        const currentBranchSupervisor = branchSupervisorMap.get(predominantFilial);
-
-                        if (currentBranchSupervisor) {
-                            newSale['CODUSUR'] = `INATIVOS_${predominantFilial}`;
-                            newSale['NOME'] = `INATIVOS ${predominantFilial}`;
-                            newSale['SUPERV'] = currentBranchSupervisor;
-                            // Ensure filial matches the city's logic if missing
-                            if (!newSale['FILIAL']) newSale['FILIAL'] = predominantFilial;
-                            return newSale;
-                        }
+                if (clientName.includes('AMERICANAS') || clientName.includes('LOJAS AMERICANAS')) {
+                    newSale['CODUSUR'] = '1001';
+                    newSale['NOME'] = 'AMERICANAS';
+                    // Assign Supervisor/Filial from City Map if available
+                    if (mapSupervisor) {
+                        newSale['SUPERV'] = mapSupervisor;
+                        newSale['FILIAL'] = mapFilial;
+                    } else {
+                        // Fallback if map fails (e.g. unknown city)
+                        // Keep original supervisor or set to N/A?
+                        // Prompt implies "atribuído ao supervisor da cidade". If not found, we leave as is or empty?
+                        // Leaving as is might be safer, or defaulting to current.
+                        // Let's rely on the map. If no map, we don't overwrite Supervisor (or maybe we should?).
+                        // Given the context, we likely want to enforce the map.
+                        if (!newSale['SUPERV']) newSale['SUPERV'] = 'N/A';
                     }
-
-                    // Fallback if no logic matches
-                    newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS';
                     return newSale;
                 }
 
-                const rca1 = String(clientData.rca1 || '').trim();
-                if (!rca1 || rca1 === '53') {
-                    newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS'; return newSale;
+                // 4. Inactive / RCA 53 Logic
+                const rca1 = clientData ? String(clientData.rca1 || '').trim() : null;
+                const isRca53 = rca1 === '53';
+                const isInactive = !clientData || isRca53;
+
+                if (isInactive) {
+                    if (mapSupervisor) {
+                        newSale['CODUSUR'] = `INATIVOS_${mapFilial}`;
+                        newSale['NOME'] = `INATIVOS ${mapFilial}`;
+                        newSale['SUPERV'] = mapSupervisor;
+                        newSale['FILIAL'] = mapFilial;
+                    } else {
+                        // Fallback if City Map logic fails
+                        newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS';
+                    }
+                    return newSale;
                 }
-                if (rcaInfoMap.has(rca1)) {
+
+                // 5. Active Clients (Realignment)
+                // If we are here, clientData exists AND rca1 != '53'
+                if (rca1 && rcaInfoMap.has(rca1)) {
                     const newOwnerInfo = rcaInfoMap.get(rca1);
                     newSale['CODUSUR'] = rca1; newSale['NOME'] = newOwnerInfo.NOME; newSale['SUPERV'] = newOwnerInfo.SUPERV;
                 } else {
+                    // Fallback for active clients with unknown RCA (should rarely happen if rcaInfoMap is complete)
+                    // Treat as inactive/unknown? Or keep original?
+                    // Previous logic set to 'INATIVO'.
                     newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS';
                 }
                 return newSale;
