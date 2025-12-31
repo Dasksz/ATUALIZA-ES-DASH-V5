@@ -42,12 +42,16 @@ DECLARE
 
     v_result json;
 BEGIN
+    -- Increase timeout for large data aggregation
+    SET LOCAL statement_timeout = '30s';
+
     -- 1. Determine Years and Dates
     IF p_ano IS NULL OR p_ano = 'todos' OR p_ano = '' THEN
         -- Efficient check for max year using index if available, else standard max
+        -- Use direct table access instead of view to ensure optimization
         SELECT COALESCE(MAX(EXTRACT(YEAR FROM dtped))::int, EXTRACT(YEAR FROM CURRENT_DATE)::int)
         INTO v_current_year
-        FROM public.all_sales;
+        FROM public.data_detailed;
     ELSE
         v_current_year := p_ano::int;
     END IF;
@@ -64,61 +68,86 @@ BEGIN
         v_target_month := p_mes::int + 1; -- JS is 0-indexed
     ELSE
          -- Find last month with sales in current year efficiently
+         -- Check detailed data first as it likely contains the latest
          SELECT EXTRACT(MONTH FROM MAX(dtped))::int INTO v_target_month
-         FROM public.all_sales
+         FROM public.data_detailed
          WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr;
+
+         IF v_target_month IS NULL THEN
+            SELECT EXTRACT(MONTH FROM MAX(dtped))::int INTO v_target_month
+            FROM public.data_history
+            WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr;
+         END IF;
 
          IF v_target_month IS NULL THEN v_target_month := 12; END IF;
     END IF;
 
     -- 3. KPIs Calculation
     -- KPI: Active Clients (Positive Sales > 1) in Target Month
-    -- Optimized: No Temp Table, direct aggregation with SARGable date filter
+    -- Optimized: UNION ALL of direct tables instead of View to help planner push down predicates
     SELECT COUNT(*) INTO v_kpi_clients_attended
     FROM (
-        SELECT codcli
-        FROM public.all_sales
-        WHERE dtped >= make_date(v_current_year, v_target_month, 1)
-          AND dtped <  (make_date(v_current_year, v_target_month, 1) + interval '1 month')
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        SELECT codcli, SUM(vlvenda) as sum_venda, SUM(COALESCE(vldevolucao, 0)) as sum_dev
+        FROM (
+            SELECT codcli, vlvenda, vldevolucao FROM public.data_detailed
+            WHERE dtped >= make_date(v_current_year, v_target_month, 1)
+              AND dtped <  (make_date(v_current_year, v_target_month, 1) + interval '1 month')
+              AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+              AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+              AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+              AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+              AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            UNION ALL
+            SELECT codcli, vlvenda, vldevolucao FROM public.data_history
+            WHERE dtped >= make_date(v_current_year, v_target_month, 1)
+              AND dtped <  (make_date(v_current_year, v_target_month, 1) + interval '1 month')
+              AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+              AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+              AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+              AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+              AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        ) combined
         GROUP BY codcli
         HAVING (SUM(vlvenda) - SUM(COALESCE(vldevolucao, 0))) > 1
     ) t;
 
     -- KPI: Base Clients
-    -- Optimized: Use Loose Index Scan if no other filters applied, else use Covering Index
-    -- (Complex recursive CTE for loose scan is tricky with multiple dynamic filters,
-    -- but since we have a covering index on dtped+...+codusur, a standard DISTINCT is now an index-only scan)
+    -- Optimized: Skip 'relevant_rcas' scan if no specific Supervisor/Vendor filters are applied.
+    -- This avoids scanning millions of rows to find "Active RCAs" when we just want the base client count.
 
-    WITH relevant_rcas AS (
-        SELECT DISTINCT codusur
-        FROM public.all_sales
-        WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-    )
-    SELECT COUNT(*) INTO v_kpi_clients_base
-    FROM public.data_clients c
-    WHERE
-        (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade)
-        AND c.bloqueio != 'S'
-        AND (
-            -- If specific supervisor/vendedor selected, we might assume their RCA code aligns,
-            -- but to be safe we use the actual sales history mapping via relevant_rcas
-            (p_supervisor IS NULL AND p_vendedor IS NULL)
-            OR
-            (c.rca1 IN (SELECT codusur FROM relevant_rcas))
-        );
+    IF (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') THEN
+        SELECT COUNT(*) INTO v_kpi_clients_base
+        FROM public.data_clients c
+        WHERE c.bloqueio != 'S'
+          AND (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade);
+    ELSE
+        -- Complex filtering: Only count clients belonging to RCAs active in the period
+        WITH relevant_rcas AS (
+            SELECT DISTINCT codusur
+            FROM (
+                SELECT codusur FROM public.data_detailed
+                WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr
+                  AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+                  AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+                  AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+                UNION
+                SELECT codusur FROM public.data_history
+                WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr
+                  AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+                  AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+                  AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            ) t
+        )
+        SELECT COUNT(*) INTO v_kpi_clients_base
+        FROM public.data_clients c
+        WHERE
+            (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade)
+            AND c.bloqueio != 'S'
+            AND (c.rca1 IN (SELECT codusur FROM relevant_rcas));
+    END IF;
 
     -- 4. Monthly Data for Charts
-    -- Single pass aggregation for both years using CASE
+    -- Query tables directly to leverage indexes and avoid View overhead
     WITH monthly_agg AS (
         SELECT
             EXTRACT(YEAR FROM dtped)::int as yr,
@@ -128,9 +157,16 @@ BEGIN
             SUM(vlbonific) as bonificacao,
             SUM(COALESCE(vldevolucao,0)) as devolucao,
             COUNT(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as positivacao
-        FROM public.all_sales
-        WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+        FROM (
+            SELECT dtped, vlvenda, totpesoliq, vlbonific, vldevolucao, codcli, filial, cidade, superv, nome, codfor
+            FROM public.data_detailed
+            WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
+            UNION ALL
+            SELECT dtped, vlvenda, totpesoliq, vlbonific, vldevolucao, codcli, filial, cidade, superv, nome, codfor
+            FROM public.data_history
+            WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
+        ) all_data
+        WHERE (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
           AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
           AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
           AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
