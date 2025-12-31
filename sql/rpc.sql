@@ -412,36 +412,59 @@ BEGIN
     END IF;
 
     -- 1. Supervisors (Exclude p_supervisor)
-    SELECT ARRAY_AGG(DISTINCT superv ORDER BY superv) INTO v_supervisors
-    FROM public.all_sales
-    WHERE
-        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-        -- Exclude p_supervisor check
-        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (
-            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
-            OR
-            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
-        );
+    IF (p_filial IS NULL OR p_filial = '') AND (p_cidade IS NULL OR p_cidade = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
+        -- Optimization: No filters active, use Loose Index Scan
+        WITH RECURSIVE t AS (
+            SELECT min(superv) AS val FROM public.all_sales WHERE superv IS NOT NULL
+            UNION ALL
+            SELECT (SELECT min(superv) FROM public.all_sales WHERE superv > t.val AND superv IS NOT NULL)
+            FROM t WHERE t.val IS NOT NULL
+        )
+        SELECT ARRAY_AGG(val ORDER BY val) INTO v_supervisors FROM t WHERE val IS NOT NULL;
+    ELSE
+        SELECT ARRAY_AGG(DISTINCT superv ORDER BY superv) INTO v_supervisors
+        FROM public.all_sales
+        WHERE
+            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+            -- Exclude p_supervisor check
+            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            AND (
+                (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+                OR
+                (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+            );
+    END IF;
 
     -- 2. Vendedores (Exclude p_vendedor)
-    SELECT ARRAY_AGG(DISTINCT nome ORDER BY nome) INTO v_vendedores
-    FROM public.all_sales
-    WHERE
-        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-        -- Exclude p_vendedor check
-        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (
-            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
-            OR
-            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
-        );
+    IF (p_filial IS NULL OR p_filial = '') AND (p_cidade IS NULL OR p_cidade = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
+        -- Optimization: No filters active, use Loose Index Scan
+        WITH RECURSIVE t AS (
+            SELECT min(nome) AS val FROM public.all_sales WHERE nome IS NOT NULL
+            UNION ALL
+            SELECT (SELECT min(nome) FROM public.all_sales WHERE nome > t.val AND nome IS NOT NULL)
+            FROM t WHERE t.val IS NOT NULL
+        )
+        SELECT ARRAY_AGG(val ORDER BY val) INTO v_vendedores FROM t WHERE val IS NOT NULL;
+    ELSE
+        SELECT ARRAY_AGG(DISTINCT nome ORDER BY nome) INTO v_vendedores
+        FROM public.all_sales
+        WHERE
+            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+            -- Exclude p_vendedor check
+            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            AND (
+                (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+                OR
+                (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+            );
+    END IF;
 
     -- 3. Fornecedores (Exclude p_fornecedor)
+    -- Complex tuple distinct, sticking to standard aggregation but usually smaller cardinality
     SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor) ORDER BY fornecedor) INTO v_fornecedores
     FROM (
         SELECT DISTINCT codfor, fornecedor
@@ -461,34 +484,56 @@ BEGIN
     ) t;
 
     -- 4. Cidades (Exclude p_cidade)
-    SELECT ARRAY_AGG(DISTINCT cidade ORDER BY cidade) INTO v_cidades
-    FROM public.all_sales
-    WHERE
-        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-        -- Exclude p_cidade check
-        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (
-            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
-            OR
-            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
-        );
+    IF (p_filial IS NULL OR p_filial = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
+        -- Optimization: No filters active, use Loose Index Scan
+        WITH RECURSIVE t AS (
+            SELECT min(cidade) AS val FROM public.all_sales WHERE cidade IS NOT NULL
+            UNION ALL
+            SELECT (SELECT min(cidade) FROM public.all_sales WHERE cidade > t.val AND cidade IS NOT NULL)
+            FROM t WHERE t.val IS NOT NULL
+        )
+        SELECT ARRAY_AGG(val ORDER BY val) INTO v_cidades FROM t WHERE val IS NOT NULL;
+    ELSE
+        SELECT ARRAY_AGG(DISTINCT cidade ORDER BY cidade) INTO v_cidades
+        FROM public.all_sales
+        WHERE
+            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+            -- Exclude p_cidade check
+            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            AND (
+                (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+                OR
+                (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+            );
+    END IF;
 
     -- 5. Filiais (Exclude p_filial)
-    SELECT ARRAY_AGG(DISTINCT filial ORDER BY filial) INTO v_filiais
-    FROM public.all_sales
-    WHERE
-        -- Exclude p_filial check
-        (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (
-            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
-            OR
-            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
-        );
+    IF (p_cidade IS NULL OR p_cidade = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
+        -- Optimization: No filters active, use Loose Index Scan
+        WITH RECURSIVE t AS (
+            SELECT min(filial) AS val FROM public.all_sales WHERE filial IS NOT NULL
+            UNION ALL
+            SELECT (SELECT min(filial) FROM public.all_sales WHERE filial > t.val AND filial IS NOT NULL)
+            FROM t WHERE t.val IS NOT NULL
+        )
+        SELECT ARRAY_AGG(val ORDER BY val) INTO v_filiais FROM t WHERE val IS NOT NULL;
+    ELSE
+        SELECT ARRAY_AGG(DISTINCT filial ORDER BY filial) INTO v_filiais
+        FROM public.all_sales
+        WHERE
+            -- Exclude p_filial check
+            (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            AND (
+                (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+                OR
+                (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+            );
+    END IF;
 
     -- 6. Anos (Exclude p_ano, but include p_mes)
     SELECT ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM dtped)::int ORDER BY EXTRACT(YEAR FROM dtped)::int DESC) INTO v_anos
