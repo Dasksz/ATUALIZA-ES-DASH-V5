@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Check Profile with Timeout - 1s (Modified per user request)
             const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 1000));
-            const profileQuery = supabase.from('profiles').select('status').eq('id', user.id).single();
+            const profileQuery = supabase.from('profiles').select('status, role').eq('id', user.id).single();
 
             const { data: profile, error } = await Promise.race([profileQuery, timeout]);
 
@@ -164,8 +164,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Status handling
+            // Status & Role handling
             const status = profile?.status || 'pendente';
+            if (profile?.role) {
+                window.userRole = profile.role;
+            }
             console.log('Status do perfil:', status);
 
             if (status === 'aprovado') {
@@ -327,17 +330,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if(generateBtn) generateBtn.addEventListener('click', () => {
         if (!files.salesPrevYearFile || !files.salesCurrYearFile || !files.salesCurrMonthFile || !files.clientsFile || !files.productsFile) return;
 
-        const supabaseUrl = supabaseUrlInput.value.trim();
-        const supabaseKey = supabaseKeyInput.value.trim();
-
-        if (!supabaseUrl || !supabaseKey) {
-            alert('Por favor, informe a URL e a Chave Secreta do Supabase.');
-            return;
-        }
+        // Credentials are no longer passed to worker.
+        // Authentication is handled via session token in enviarDadosParaSupabase.
 
         generateBtn.disabled = true;
         statusContainer.classList.remove('hidden');
-        statusText.textContent = 'Iniciando processamento e upload...';
+        statusText.textContent = 'Iniciando processamento...';
         progressBar.style.width = '0%';
 
         const worker = new Worker('src/js/worker.js');
@@ -347,33 +345,91 @@ document.addEventListener('DOMContentLoaded', () => {
             salesCurrYearFile: files.salesCurrYearFile,
             salesCurrMonthFile: files.salesCurrMonthFile,
             clientsFile: files.clientsFile,
-            productsFile: files.productsFile,
-            supabaseCredentials: {
-                url: supabaseUrl,
-                key: supabaseKey
-            }
+            productsFile: files.productsFile
         });
 
-        worker.onmessage = (event) => {
-            const { type, status, percentage, message } = event.data;
+        worker.onmessage = async (event) => {
+            const { type, data, status, percentage, message } = event.data;
             if (type === 'progress') {
                 statusText.textContent = status;
                 progressBar.style.width = `${percentage}%`;
             } else if (type === 'result') {
-                statusText.textContent = 'Dados atualizados com sucesso!';
-                progressBar.style.width = '100%';
-                setTimeout(() => {
-                    uploaderModal.classList.add('hidden');
-                    statusContainer.classList.add('hidden');
+                statusText.textContent = 'Processamento concluído. Iniciando upload...';
+                try {
+                    await enviarDadosParaSupabase(data);
+
+                    statusText.textContent = 'Dados atualizados com sucesso!';
+                    progressBar.style.width = '100%';
+                    setTimeout(() => {
+                        uploaderModal.classList.add('hidden');
+                        statusContainer.classList.add('hidden');
+                        generateBtn.disabled = false;
+                        initDashboard(); // Reload data
+                    }, 1500);
+                } catch (e) {
+                    console.error(e);
+                    statusText.innerHTML = `<span class="text-red-500">Erro no upload: ${e.message}</span>`;
                     generateBtn.disabled = false;
-                    initDashboard(); // Reload data
-                }, 1500);
+                }
             } else if (type === 'error') {
                 statusText.innerHTML = `<span class="text-red-500">Erro: ${message}</span>`;
                 generateBtn.disabled = false;
             }
         };
     });
+
+    async function enviarDadosParaSupabase(data) {
+        const updateStatus = (msg, percent) => {
+            statusText.textContent = msg;
+            progressBar.style.width = `${percent}%`;
+        };
+
+        const performUpsert = async (table, batch) => {
+            const { error } = await supabase.from(table).insert(batch); // Use insert as per original logic, or upsert if needed
+            if (error) {
+                throw new Error(`Erro Supabase em ${table}: ${error.message}`);
+            }
+        };
+
+        const clearTable = async (table) => {
+            // Use RPC for safe truncation (checks is_admin)
+            const { error } = await supabase.rpc('truncate_table', { table_name: table });
+            if (error) {
+                throw new Error(`Erro ao limpar tabela ${table}: ${error.message}`);
+            }
+        };
+
+        const BATCH_SIZE = 1000;
+        const uploadBatch = async (table, items) => {
+            for (let i = 0; i < items.length; i += BATCH_SIZE) {
+                const batch = items.slice(i, i + BATCH_SIZE);
+                await performUpsert(table, batch);
+                const progress = Math.round((i / items.length) * 100);
+                updateStatus(`Enviando ${table}... ${progress}%`, progress);
+            }
+        };
+
+        try {
+            if (data.history && data.history.length > 0) {
+                updateStatus('Limpando histórico...', 10);
+                await clearTable('data_history');
+                await uploadBatch('data_history', data.history);
+            }
+            if (data.detailed && data.detailed.length > 0) {
+                updateStatus('Limpando detalhado...', 40);
+                await clearTable('data_detailed');
+                await uploadBatch('data_detailed', data.detailed);
+            }
+            if (data.clients && data.clients.length > 0) {
+                updateStatus('Limpando clientes...', 70);
+                await clearTable('data_clients');
+                await uploadBatch('data_clients', data.clients);
+            }
+        } catch (error) {
+            console.error("Upload error:", error);
+            throw error;
+        }
+    }
 
     // --- Dashboard Data Logic ---
 

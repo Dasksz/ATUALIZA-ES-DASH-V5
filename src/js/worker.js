@@ -1,7 +1,4 @@
 self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-self.importScripts('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js');
-
-let supabase;
 
 function parseDate(dateString) {
     if (!dateString) return null;
@@ -153,33 +150,11 @@ const processSalesData = (rawData, clientMap, productMasterMap) => {
     });
 };
 
-const BATCH_SIZE = 1000;
-
-async function batchInsert(table, data) {
-    for (let i = 0; i < data.length; i += BATCH_SIZE) {
-        const batch = data.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from(table).insert(batch);
-        if (error) throw error;
-        self.postMessage({ type: 'progress', status: `Inserindo ${table}...`, percentage: 80 + Math.round((i / data.length) * 15) });
-    }
-}
-
 self.onmessage = async (event) => {
-    const { salesPrevYearFile, salesCurrYearFile, salesCurrMonthFile, clientsFile, productsFile, supabaseCredentials } = event.data;
+    // Removed credential requirements since worker no longer interacts with Supabase
+    const { salesPrevYearFile, salesCurrYearFile, salesCurrMonthFile, clientsFile, productsFile } = event.data;
 
     try {
-        if (!supabaseCredentials || !supabaseCredentials.url || !supabaseCredentials.key) {
-             throw new Error("Credenciais do Supabase não fornecidas.");
-        }
-
-        // Initialize Supabase with provided credentials
-        supabase = self.supabase.createClient(supabaseCredentials.url, supabaseCredentials.key);
-
-        // Step 0: Clear Data (Assume user wants full refresh)
-        self.postMessage({ type: 'progress', status: 'Limpando banco de dados...', percentage: 0 });
-        const { error: rpcError } = await supabase.rpc('clear_all_data');
-        if (rpcError) throw new Error('Erro ao limpar dados: ' + rpcError.message);
-
         self.postMessage({ type: 'progress', status: 'Lendo arquivos...', percentage: 5 });
         let [salesPrevYearDataRaw, salesCurrYearHistDataRaw, salesCurrMonthDataRaw, clientsDataRaw, productsDataRaw] = await Promise.all([
             readFile(salesPrevYearFile),
@@ -196,7 +171,7 @@ self.onmessage = async (event) => {
         salesCurrYearHistDataRaw = salesCurrYearHistDataRaw.filter(pepsicoFilter);
         salesCurrMonthDataRaw = salesCurrMonthDataRaw.filter(pepsicoFilter);
 
-        // Upload Clients First (Dependency for maps)
+        // Process Clients
         self.postMessage({ type: 'progress', status: 'Processando clientes...', percentage: 20 });
         const clientMap = new Map();
         const clientsToInsert = [];
@@ -232,8 +207,6 @@ self.onmessage = async (event) => {
             });
             clientsToInsert.push(clientData);
         });
-
-        await batchInsert('data_clients', clientsToInsert);
 
         self.postMessage({ type: 'progress', status: 'Mapeando produtos...', percentage: 30 });
         const productMasterMap = new Map();
@@ -347,19 +320,16 @@ self.onmessage = async (event) => {
         const finalCurrYearHist = applyAllRules(processedCurrYearHist);
         const finalCurrMonth = applyAllRules(processedCurrMonth);
 
-        // Insert Data
-        self.postMessage({ type: 'progress', status: 'Enviando dados para o banco...', percentage: 70 });
+        self.postMessage({ type: 'progress', status: 'Preparando dados para envio...', percentage: 90 });
 
-        // Prev Year -> data_history
-        await batchInsert('data_history', finalPrevYear);
+        // Collect all data to return
+        const resultPayload = {
+            history: [...finalPrevYear, ...finalCurrYearHist],
+            detailed: finalCurrMonth,
+            clients: clientsToInsert
+        };
 
-        // Curr Year History -> data_history
-        await batchInsert('data_history', finalCurrYearHist);
-
-        // Curr Month -> data_detailed
-        await batchInsert('data_detailed', finalCurrMonth);
-
-        self.postMessage({ type: 'result', data: { success: true } });
+        self.postMessage({ type: 'result', data: resultPayload });
 
     } catch (error) {
         self.postMessage({ type: 'error', message: error.message + (error.stack ? `\nStack: ${error.stack}`: '') });
