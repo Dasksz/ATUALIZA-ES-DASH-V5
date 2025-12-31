@@ -454,51 +454,84 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCharts = {};
 
     async function initDashboard() {
-        await loadFilters();
+        const filters = getCurrentFilters();
+        await loadFilters(filters);
         await loadMainDashboardData();
     }
 
-    async function loadFilters() {
-        // Try Cache First
-        const cachedFilters = await getFromCache('dashboard_filters');
-        if (cachedFilters) {
-            console.log('Loading filters from cache...');
-            applyFiltersData(cachedFilters);
-        }
+    function getCurrentFilters() {
+        return {
+            p_filial: filialFilter.value,
+            p_cidade: cidadeFilter.value,
+            p_supervisor: supervisorFilter.value,
+            p_vendedor: vendedorFilter.value,
+            p_fornecedor: fornecedorFilter.value,
+            p_ano: anoFilter.value,
+            p_mes: mesFilter.value
+        };
+    }
 
-        // Fetch Fresh Data
-        const { data, error } = await supabase.rpc('get_dashboard_filters');
+    async function loadFilters(currentFilters) {
+        // With dependent filters, caching is complex because every combination is unique.
+        // For now, we skip cache for filters or cache by key. Given the number of combinations, simplified to fetch fresh.
+        // If performance is an issue, we can cache specific common combinations.
+
+        const { data, error } = await supabase.rpc('get_dashboard_filters', currentFilters);
         if (error) {
             console.error('Error loading filters:', error);
             return;
         }
 
-        // Update Cache and UI if different (or just update always)
-        await saveToCache('dashboard_filters', data);
         applyFiltersData(data);
     }
 
     function applyFiltersData(data) {
-        // Populate Selects
-        populateSelect(supervisorFilter, data.supervisors);
-        populateSelect(vendedorFilter, data.vendedores);
-        populateSelect(cidadeFilter, data.cidades);
-        populateSelect(filialFilter, data.filiais);
-        populateSelect(anoFilter, data.anos);
+        // Helper to preserve selection
+        const updateSelect = (element, items, isObject = false) => {
+            const currentVal = element.value;
+            element.innerHTML = '<option value="">Todos</option>';
+            if (element.id === 'ano-filter') element.options[0].value = 'todos';
 
-        // Fornecedores (Object array)
-        fornecedorFilter.innerHTML = '<option value="">Todos</option>';
-        if(data.fornecedores) {
-            data.fornecedores.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f.cod;
-                opt.textContent = f.name;
-                fornecedorFilter.appendChild(opt);
-            });
-        }
+            if (items) {
+                items.forEach(item => {
+                    const opt = document.createElement('option');
+                    if (isObject) {
+                        opt.value = item.cod;
+                        opt.textContent = item.name;
+                    } else {
+                        opt.value = item;
+                        opt.textContent = item;
+                    }
+                    element.appendChild(opt);
+                });
+            }
+            // Restore selection if it still exists in the new list
+            // Note: If the currentVal is not in the new list (e.g. invalid for current filters),
+            // it naturally falls back to first option or empty, which is correct behavior for dependent filters.
+            // BUT, since we "exclude self" in the backend query, the current value SHOULD be in the list if it's valid.
+            if (currentVal) {
+                // Check if option exists
+                const exists = Array.from(element.options).some(o => o.value === currentVal);
+                if (exists) {
+                    element.value = currentVal;
+                } else {
+                    // If it doesn't exist, it means the current selection is invalid under other filters.
+                    // Ideally we should clear it, but the browser does that automatically if we don't set it.
+                    // However, we must ensure 'loadMainDashboardData' sees the change if we want it to auto-refresh data.
+                    // For now, let's just let it clear.
+                    element.value = (element.id === 'ano-filter' && !items.includes(currentVal)) ? 'todos' : '';
+                }
+            }
+        };
 
-        // Meses (Static)
-        // Check if options already exist to avoid duplication on re-render from cache then net
+        updateSelect(supervisorFilter, data.supervisors);
+        updateSelect(vendedorFilter, data.vendedores);
+        updateSelect(cidadeFilter, data.cidades);
+        updateSelect(filialFilter, data.filiais);
+        updateSelect(anoFilter, data.anos);
+        updateSelect(fornecedorFilter, data.fornecedores, true);
+
+        // Meses (Static - No changes needed unless we want to filter months dynamically)
         if (mesFilter.options.length <= 1) { 
             mesFilter.innerHTML = '<option value="">Todos</option>';
             const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -509,26 +542,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 mesFilter.appendChild(opt);
             });
         }
-
-        // Event Listeners (remove old ones if re-init? simplified here)
-        [supervisorFilter, vendedorFilter, fornecedorFilter, cidadeFilter, filialFilter, anoFilter, mesFilter].forEach(el => {
-            el.onchange = loadMainDashboardData; // Replaces previous listener
-        });
     }
 
-    function populateSelect(element, items) {
-        element.innerHTML = '<option value="">Todos</option>';
-        if (element.id === 'ano-filter') element.options[0].value = 'todos';
+    // Unified Change Handler
+    const handleFilterChange = async () => {
+        const filters = getCurrentFilters();
+        // 1. Update Filters (Dropdowns) based on new selection
+        await loadFilters(filters);
+        // 2. Load Data based on new selection (which might be slightly adjusted by loadFilters if values became invalid)
+        await loadMainDashboardData();
+    };
 
-        if (items) {
-            items.forEach(item => {
-                const opt = document.createElement('option');
-                opt.value = item;
-                opt.textContent = item;
-                element.appendChild(opt);
-            });
-        }
-    }
+    // Event Listeners
+    [supervisorFilter, vendedorFilter, fornecedorFilter, cidadeFilter, filialFilter, anoFilter, mesFilter].forEach(el => {
+        el.onchange = handleFilterChange;
+    });
+
+    // PopulateSelect Removed (merged into updateSelect inside applyFiltersData)
+    /*
+    function populateSelect(element, items) { ... }
+    */
 
     async function loadMainDashboardData() {
         const filters = {

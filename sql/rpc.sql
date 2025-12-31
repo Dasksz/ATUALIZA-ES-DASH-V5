@@ -363,8 +363,15 @@ END;
 $$;
 
 -- Function: Get Filters (Populate Dropdowns)
--- Function: Get Filters (Optimized - Recursive CTE for Loose Index Scan)
-CREATE OR REPLACE FUNCTION get_dashboard_filters()
+CREATE OR REPLACE FUNCTION get_dashboard_filters(
+    p_filial text default null,
+    p_cidade text default null,
+    p_supervisor text default null,
+    p_vendedor text default null,
+    p_fornecedor text default null,
+    p_ano text default null,
+    p_mes text default null
+)
 RETURNS JSON
 LANGUAGE plpgsql
 AS $$
@@ -375,63 +382,103 @@ DECLARE
     v_cidades text[];
     v_filiais text[];
     v_anos int[];
+
+    -- Helper variables for date filtering
+    v_filter_year int;
+    v_filter_month int;
 BEGIN
-    -- Note: Loose Index Scan requires an index on the column.
-    -- If no index exists, it falls back to full scan but is not worse.
+    -- Handle Year/Month parsing
+    IF p_ano IS NOT NULL AND p_ano != '' AND p_ano != 'todos' THEN
+        v_filter_year := p_ano::int;
+    END IF;
 
-    -- Supervisors
-    WITH RECURSIVE t AS (
-        SELECT min(superv) AS val FROM public.all_sales WHERE superv IS NOT NULL
-        UNION ALL
-        SELECT (SELECT min(superv) FROM public.all_sales WHERE superv > t.val AND superv IS NOT NULL)
-        FROM t WHERE t.val IS NOT NULL
-    )
-    SELECT ARRAY_AGG(val ORDER BY val) INTO v_supervisors FROM t WHERE val IS NOT NULL;
+    IF p_mes IS NOT NULL AND p_mes != '' AND p_mes != 'todos' THEN
+        v_filter_month := p_mes::int + 1; -- JS is 0-indexed
+    END IF;
 
-    -- Vendedores
-    WITH RECURSIVE t AS (
-        SELECT min(nome) AS val FROM public.all_sales WHERE nome IS NOT NULL
-        UNION ALL
-        SELECT (SELECT min(nome) FROM public.all_sales WHERE nome > t.val AND nome IS NOT NULL)
-        FROM t WHERE t.val IS NOT NULL
-    )
-    SELECT ARRAY_AGG(val ORDER BY val) INTO v_vendedores FROM t WHERE val IS NOT NULL;
+    -- 1. Supervisors (Exclude p_supervisor)
+    SELECT ARRAY_AGG(DISTINCT superv ORDER BY superv) INTO v_supervisors
+    FROM public.all_sales
+    WHERE
+        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+        -- Exclude p_supervisor check
+        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
+        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
 
-    -- Fornecedores (Slightly more complex due to tuple distinct, defaulting to standard distinct for safety/simplicity as loose index scan for tuples is harder)
-    SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor)) FROM (
-        SELECT DISTINCT codfor, fornecedor FROM public.all_sales WHERE codfor IS NOT NULL ORDER BY fornecedor
-    ) t INTO v_fornecedores;
+    -- 2. Vendedores (Exclude p_vendedor)
+    SELECT ARRAY_AGG(DISTINCT nome ORDER BY nome) INTO v_vendedores
+    FROM public.all_sales
+    WHERE
+        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+        -- Exclude p_vendedor check
+        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
+        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
 
-    -- Cidades
-    WITH RECURSIVE t AS (
-        SELECT min(cidade) AS val FROM public.all_sales WHERE cidade IS NOT NULL
-        UNION ALL
-        SELECT (SELECT min(cidade) FROM public.all_sales WHERE cidade > t.val AND cidade IS NOT NULL)
-        FROM t WHERE t.val IS NOT NULL
-    )
-    SELECT ARRAY_AGG(val ORDER BY val) INTO v_cidades FROM t WHERE val IS NOT NULL;
+    -- 3. Fornecedores (Exclude p_fornecedor)
+    SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor) ORDER BY fornecedor) INTO v_fornecedores
+    FROM (
+        SELECT DISTINCT codfor, fornecedor
+        FROM public.all_sales
+        WHERE
+            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            -- Exclude p_fornecedor check
+            AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
+            AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month)
+            AND codfor IS NOT NULL
+    ) t;
 
-    -- Filiais
-    WITH RECURSIVE t AS (
-        SELECT min(filial) AS val FROM public.all_sales WHERE filial IS NOT NULL
-        UNION ALL
-        SELECT (SELECT min(filial) FROM public.all_sales WHERE filial > t.val AND filial IS NOT NULL)
-        FROM t WHERE t.val IS NOT NULL
-    )
-    SELECT ARRAY_AGG(val ORDER BY val) INTO v_filiais FROM t WHERE val IS NOT NULL;
+    -- 4. Cidades (Exclude p_cidade)
+    SELECT ARRAY_AGG(DISTINCT cidade ORDER BY cidade) INTO v_cidades
+    FROM public.all_sales
+    WHERE
+        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+        -- Exclude p_cidade check
+        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
+        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
 
-    -- Anos (Extraction makes loose index scan hard, using standard but optimized)
-    -- Since there are very few years, a sequential scan of a year index or just the table is acceptable, but we can optimize if needed.
-    -- Standard DISTINCT is fine for low cardinality year extraction if dtped index exists.
-    SELECT ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM dtped)::int ORDER BY EXTRACT(YEAR FROM dtped)::int DESC) INTO v_anos FROM public.all_sales WHERE dtped IS NOT NULL;
+    -- 5. Filiais (Exclude p_filial)
+    SELECT ARRAY_AGG(DISTINCT filial ORDER BY filial) INTO v_filiais
+    FROM public.all_sales
+    WHERE
+        -- Exclude p_filial check
+        (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
+        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
+
+    -- 6. Anos (Exclude p_ano, but include p_mes)
+    SELECT ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM dtped)::int ORDER BY EXTRACT(YEAR FROM dtped)::int DESC) INTO v_anos
+    FROM public.all_sales
+    WHERE
+        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        -- Exclude p_ano check
+        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
 
     RETURN json_build_object(
-        'supervisors', v_supervisors,
-        'vendedores', v_vendedores,
-        'fornecedores', v_fornecedores,
-        'cidades', v_cidades,
-        'filiais', v_filiais,
-        'anos', v_anos
+        'supervisors', COALESCE(v_supervisors, '{}'),
+        'vendedores', COALESCE(v_vendedores, '{}'),
+        'fornecedores', COALESCE(v_fornecedores, '[]'::json),
+        'cidades', COALESCE(v_cidades, '{}'),
+        'filiais', COALESCE(v_filiais, '{}'),
+        'anos', COALESCE(v_anos, '{}')
     );
 END;
 $$;
