@@ -7,12 +7,12 @@
 
 -- Detailed Data
 -- Detailed Data (Covering Index for Dashboard Metrics)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_dtped_composite
+CREATE INDEX IF NOT EXISTS idx_detailed_dtped_composite
 ON public.data_detailed (dtped, filial, cidade, superv, nome, codfor)
 INCLUDE (vlvenda, vldevolucao, totpesoliq, vlbonific, codcli, codusur);
 
 -- History Data (Covering Index for Dashboard Metrics)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_dtped_composite
+CREATE INDEX IF NOT EXISTS idx_history_dtped_composite
 ON public.data_history (dtped, filial, cidade, superv, nome, codfor)
 INCLUDE (vlvenda, vldevolucao, totpesoliq, vlbonific, codcli, codusur);
 
@@ -22,31 +22,31 @@ INCLUDE (vlvenda, vldevolucao, totpesoliq, vlbonific, codcli, codusur);
 -- Most already exist as single column indexes, ensuring they are present here.
 
 -- Supervisors
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_superv_btree ON public.data_detailed (superv);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_superv_btree ON public.data_history (superv);
+CREATE INDEX IF NOT EXISTS idx_detailed_superv_btree ON public.data_detailed (superv);
+CREATE INDEX IF NOT EXISTS idx_history_superv_btree ON public.data_history (superv);
 
 -- RCA Codes (codusur) - needed for Base Clients KPI
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_codusur_btree ON public.data_detailed (codusur);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_codusur_btree ON public.data_history (codusur);
+CREATE INDEX IF NOT EXISTS idx_detailed_codusur_btree ON public.data_detailed (codusur);
+CREATE INDEX IF NOT EXISTS idx_history_codusur_btree ON public.data_history (codusur);
 
 -- Vendedores (nome)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_nome_btree ON public.data_detailed (nome);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_nome_btree ON public.data_history (nome);
+CREATE INDEX IF NOT EXISTS idx_detailed_nome_btree ON public.data_detailed (nome);
+CREATE INDEX IF NOT EXISTS idx_history_nome_btree ON public.data_history (nome);
 
 -- Cidades
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_cidade_btree ON public.data_detailed (cidade);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_cidade_btree ON public.data_history (cidade);
+CREATE INDEX IF NOT EXISTS idx_detailed_cidade_btree ON public.data_detailed (cidade);
+CREATE INDEX IF NOT EXISTS idx_history_cidade_btree ON public.data_history (cidade);
 
 -- Filiais
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_detailed_filial_btree ON public.data_detailed (filial);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_filial_btree ON public.data_history (filial);
+CREATE INDEX IF NOT EXISTS idx_detailed_filial_btree ON public.data_detailed (filial);
+CREATE INDEX IF NOT EXISTS idx_history_filial_btree ON public.data_history (filial);
 
 
 -- 3. Client Data Indexes
 -- Support for get_city_view_data joins and filtering
 
 -- RCA2 was missing in original schema
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clients_rca2 ON public.data_clients (rca2);
+CREATE INDEX IF NOT EXISTS idx_clients_rca2 ON public.data_clients (rca2);
 
 -- Composite index for Client City lookup (often used together)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_clients_cidade_composite ON public.data_clients (cidade, rca1, rca2);
+CREATE INDEX IF NOT EXISTS idx_clients_cidade_composite ON public.data_clients (cidade, rca1, rca2);
