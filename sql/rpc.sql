@@ -43,15 +43,16 @@ DECLARE
     v_result json;
 BEGIN
     -- Increase timeout for large data aggregation
-    SET LOCAL statement_timeout = '30s';
+    SET LOCAL statement_timeout = '60s';
 
     -- 1. Determine Years and Dates
     IF p_ano IS NULL OR p_ano = 'todos' OR p_ano = '' THEN
-        -- Efficient check for max year using index if available, else standard max
-        -- Use direct table access instead of view to ensure optimization
-        SELECT COALESCE(MAX(EXTRACT(YEAR FROM dtped))::int, EXTRACT(YEAR FROM CURRENT_DATE)::int)
-        INTO v_current_year
-        FROM public.data_detailed;
+        -- Check both tables to find the true latest year
+        SELECT COALESCE(GREATEST(
+            (SELECT MAX(EXTRACT(YEAR FROM dtped))::int FROM public.data_detailed),
+            (SELECT MAX(EXTRACT(YEAR FROM dtped))::int FROM public.data_history)
+        ), EXTRACT(YEAR FROM CURRENT_DATE)::int)
+        INTO v_current_year;
     ELSE
         v_current_year := p_ano::int;
     END IF;
@@ -67,19 +68,12 @@ BEGIN
     IF p_mes IS NOT NULL AND p_mes != '' AND p_mes != 'todos' THEN
         v_target_month := p_mes::int + 1; -- JS is 0-indexed
     ELSE
-         -- Find last month with sales in current year efficiently
-         -- Check detailed data first as it likely contains the latest
-         SELECT EXTRACT(MONTH FROM MAX(dtped))::int INTO v_target_month
-         FROM public.data_detailed
-         WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr;
-
-         IF v_target_month IS NULL THEN
-            SELECT EXTRACT(MONTH FROM MAX(dtped))::int INTO v_target_month
-            FROM public.data_history
-            WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr;
-         END IF;
-
-         IF v_target_month IS NULL THEN v_target_month := 12; END IF;
+         -- Find last month with sales in current year by checking both tables
+         SELECT COALESCE(GREATEST(
+            (SELECT EXTRACT(MONTH FROM MAX(dtped))::int FROM public.data_detailed WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr),
+            (SELECT EXTRACT(MONTH FROM MAX(dtped))::int FROM public.data_history WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr)
+         ), 12) -- Default to Dec if null
+         INTO v_target_month;
     END IF;
 
     -- 3. KPIs Calculation
@@ -147,8 +141,8 @@ BEGIN
     END IF;
 
     -- 4. Monthly Data for Charts
-    -- Query tables directly to leverage indexes and avoid View overhead
-    WITH monthly_agg AS (
+    -- Optimized: Pre-aggregate by month per table to reduce rows before UNION
+    WITH pre_agg_detailed AS (
         SELECT
             EXTRACT(YEAR FROM dtped)::int as yr,
             EXTRACT(MONTH FROM dtped)::int as mth,
@@ -156,22 +150,52 @@ BEGIN
             SUM(totpesoliq) as peso,
             SUM(vlbonific) as bonificacao,
             SUM(COALESCE(vldevolucao,0)) as devolucao,
-            COUNT(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as positivacao
-        FROM (
-            SELECT dtped, vlvenda, totpesoliq, vlbonific, vldevolucao, codcli, filial, cidade, superv, nome, codfor
-            FROM public.data_detailed
-            WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
-            UNION ALL
-            SELECT dtped, vlvenda, totpesoliq, vlbonific, vldevolucao, codcli, filial, cidade, superv, nome, codfor
-            FROM public.data_history
-            WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
-        ) all_data
-        WHERE (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+            array_agg(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as active_clients_arr
+        FROM public.data_detailed
+        WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
+          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
           AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
           AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
           AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
           AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
         GROUP BY 1, 2
+    ),
+    pre_agg_history AS (
+        SELECT
+            EXTRACT(YEAR FROM dtped)::int as yr,
+            EXTRACT(MONTH FROM dtped)::int as mth,
+            SUM(vlvenda) as faturamento,
+            SUM(totpesoliq) as peso,
+            SUM(vlbonific) as bonificacao,
+            SUM(COALESCE(vldevolucao,0)) as devolucao,
+            array_agg(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as active_clients_arr
+        FROM public.data_history
+        WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
+          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
+          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
+          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
+          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        GROUP BY 1, 2
+    ),
+    monthly_agg AS (
+        SELECT
+            yr,
+            mth,
+            SUM(faturamento) as faturamento,
+            SUM(peso) as peso,
+            SUM(bonificacao) as bonificacao,
+            SUM(devolucao) as devolucao,
+            -- Calculate distinct clients across both tables by unnesting and counting distinct again
+            (SELECT count(DISTINCT c) FROM unnest(array_cat(agg1.active_clients_arr, agg2.active_clients_arr)) as c) as positivacao
+        FROM (
+            SELECT * FROM pre_agg_detailed
+            UNION ALL
+            SELECT * FROM pre_agg_history
+        ) combined_agg
+        LEFT JOIN pre_agg_detailed agg1 ON combined_agg.yr = agg1.yr AND combined_agg.mth = agg1.mth
+        LEFT JOIN pre_agg_history agg2 ON combined_agg.yr = agg2.yr AND combined_agg.mth = agg2.mth
+        GROUP BY 1, 2, agg1.active_clients_arr, agg2.active_clients_arr
     )
     SELECT
         COALESCE(json_agg(json_build_object(
