@@ -43,7 +43,7 @@ DECLARE
     v_result json;
 BEGIN
     -- Increase timeout for large data aggregation
-    SET LOCAL statement_timeout = '60s';
+    SET LOCAL statement_timeout = '120s';
 
     -- 1. Determine Years and Dates
     IF p_ano IS NULL OR p_ano = 'todos' OR p_ano = '' THEN
@@ -386,7 +386,11 @@ DECLARE
     -- Helper variables for date filtering
     v_filter_year int;
     v_filter_month int;
+    v_min_date date;
+    v_max_date date;
 BEGIN
+    SET LOCAL statement_timeout = '120s';
+
     -- Handle Year/Month parsing
     IF p_ano IS NOT NULL AND p_ano != '' AND p_ano != 'todos' THEN
         v_filter_year := p_ano::int;
@@ -394,6 +398,17 @@ BEGIN
     
     IF p_mes IS NOT NULL AND p_mes != '' AND p_mes != 'todos' THEN
         v_filter_month := p_mes::int + 1; -- JS is 0-indexed
+    END IF;
+
+    -- Construct optimized date ranges
+    IF v_filter_year IS NOT NULL THEN
+        IF v_filter_month IS NOT NULL THEN
+             v_min_date := make_date(v_filter_year, v_filter_month, 1);
+             v_max_date := v_min_date + interval '1 month';
+        ELSE
+             v_min_date := make_date(v_filter_year, 1, 1);
+             v_max_date := make_date(v_filter_year + 1, 1, 1);
+        END IF;
     END IF;
 
     -- 1. Supervisors (Exclude p_supervisor)
@@ -405,8 +420,11 @@ BEGIN
         -- Exclude p_supervisor check
         AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
         AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
-        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
+        AND (
+            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+            OR
+            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+        );
 
     -- 2. Vendedores (Exclude p_vendedor)
     SELECT ARRAY_AGG(DISTINCT nome ORDER BY nome) INTO v_vendedores
@@ -417,8 +435,11 @@ BEGIN
         AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
         -- Exclude p_vendedor check
         AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
-        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
+        AND (
+            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+            OR
+            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+        );
 
     -- 3. Fornecedores (Exclude p_fornecedor)
     SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor) ORDER BY fornecedor) INTO v_fornecedores
@@ -431,8 +452,11 @@ BEGIN
             AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
             AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
             -- Exclude p_fornecedor check
-            AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
-            AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month)
+            AND (
+                (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+                OR
+                (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+            )
             AND codfor IS NOT NULL
     ) t;
 
@@ -445,8 +469,11 @@ BEGIN
         AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
         AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
         AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
-        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
+        AND (
+            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+            OR
+            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+        );
 
     -- 5. Filiais (Exclude p_filial)
     SELECT ARRAY_AGG(DISTINCT filial ORDER BY filial) INTO v_filiais
@@ -457,8 +484,11 @@ BEGIN
         AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
         AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
         AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        AND (v_filter_year IS NULL OR EXTRACT(YEAR FROM dtped)::int = v_filter_year)
-        AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
+        AND (
+            (v_min_date IS NOT NULL AND dtped >= v_min_date AND dtped < v_max_date)
+            OR
+            (v_min_date IS NULL AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month))
+        );
 
     -- 6. Anos (Exclude p_ano, but include p_mes)
     SELECT ARRAY_AGG(DISTINCT EXTRACT(YEAR FROM dtped)::int ORDER BY EXTRACT(YEAR FROM dtped)::int DESC) INTO v_anos
@@ -469,7 +499,7 @@ BEGIN
         AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
         AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
         AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
-        -- Exclude p_ano check
+        -- Exclude p_ano check, but still apply month filter if set (without year context, we can't use ranges unless we iterate years, which is overkill. EXTRACT is unavoidable here if Year is not set)
         AND (v_filter_month IS NULL OR EXTRACT(MONTH FROM dtped)::int = v_filter_month);
 
     RETURN json_build_object(
