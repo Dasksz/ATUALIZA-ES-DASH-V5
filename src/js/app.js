@@ -152,8 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Verificando perfil para ID:', user.id);
         
         try {
-            // Check Profile with Timeout - 15s (Strictly matching reference)
-            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 15000));
+            // Check Profile with Timeout - 1s (Modified per user request)
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 1000));
             const profileQuery = supabase.from('profiles').select('status').eq('id', user.id).single();
 
             const { data: profile, error } = await Promise.race([profileQuery, timeout]);
@@ -196,8 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Only show error if app is not ready (initial load)
             if (!isAppReady) {
-                alert("Erro de conexão: " + (err.message || 'Erro desconhecido'));
-                showScreen('login-view');
+                // Suppress timeout error as per user request
+                if (err.message !== 'Tempo limite de conexão excedido. Verifique sua internet.') {
+                    alert("Erro de conexão: " + (err.message || 'Erro desconhecido'));
+                    showScreen('login-view');
+                } else {
+                    console.warn('Timeout de conexão suprimido. Aguardando recuperação...');
+                }
             }
         } finally {
             checkProfileLock = false;
