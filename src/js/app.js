@@ -284,6 +284,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     navUploaderBtn.addEventListener('click', () => {
+        if (window.userRole !== 'adm') {
+            alert('Acesso negado: Apenas administradores podem acessar o uploader.');
+            return;
+        }
         uploaderModal.classList.remove('hidden');
         if (window.innerWidth < 768) toggleSidebar();
     });
@@ -308,18 +312,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Uploader Logic ---
     let files = {};
 
-    // Elements for Credentials
-    const supabaseUrlInput = document.getElementById('supabase-url-input');
-    const supabaseKeyInput = document.getElementById('supabase-key-input');
-
     const checkFiles = () => {
-        const hasCredentials = supabaseUrlInput.value.trim() !== '' && supabaseKeyInput.value.trim() !== '';
+        // No longer need credentials check, they are handled by auth session
         const hasFiles = files.salesPrevYearFile && files.salesCurrYearFile && files.salesCurrMonthFile && files.clientsFile && files.productsFile;
-        generateBtn.disabled = !(hasFiles && hasCredentials);
+        generateBtn.disabled = !hasFiles;
     };
-
-    if(supabaseUrlInput) supabaseUrlInput.addEventListener('input', checkFiles);
-    if(supabaseKeyInput) supabaseKeyInput.addEventListener('input', checkFiles);
 
     if(salesPrevYearInput) salesPrevYearInput.addEventListener('change', (e) => { files.salesPrevYearFile = e.target.files[0]; checkFiles(); });
     if(salesCurrYearInput) salesCurrYearInput.addEventListener('change', (e) => { files.salesCurrYearFile = e.target.files[0]; checkFiles(); });
@@ -330,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(generateBtn) generateBtn.addEventListener('click', () => {
         if (!files.salesPrevYearFile || !files.salesCurrYearFile || !files.salesCurrMonthFile || !files.clientsFile || !files.productsFile) return;
 
-        // Credentials are no longer passed to worker.
+        // Credentials are no longer passed to worker. 
         // Authentication is handled via session token in enviarDadosParaSupabase.
 
         generateBtn.disabled = true;
@@ -357,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.textContent = 'Processamento concluído. Iniciando upload...';
                 try {
                     await enviarDadosParaSupabase(data);
-
+                    
                     statusText.textContent = 'Dados atualizados com sucesso!';
                     progressBar.style.width = '100%';
                     setTimeout(() => {
