@@ -218,11 +218,75 @@ self.onmessage = async (event) => {
             productMasterMap.set(productCode, qtdeMaster);
         });
 
+        // --- Logic for Inactive Clients (City -> Filial -> Supervisor) ---
+        // 1. Build City Predominance Map (City -> Filial) using Curr Year History + Curr Month
+        const cityFilialStats = new Map();
+        const relevantSalesForCity = [...salesCurrYearHistDataRaw, ...salesCurrMonthDataRaw];
+
+        relevantSalesForCity.forEach(row => {
+            const cidade = String(row['MUNICIPIO'] || '').trim().toUpperCase();
+            let filial = String(row['FILIAL'] || '').trim();
+            if (!cidade || !filial) return;
+            if (filial === '5') filial = '05';
+            if (filial === '8') filial = '08';
+
+            if (!cityFilialStats.has(cidade)) {
+                cityFilialStats.set(cidade, {});
+            }
+            const stats = cityFilialStats.get(cidade);
+            stats[filial] = (stats[filial] || 0) + 1;
+        });
+
+        const cityPredominantFilialMap = new Map();
+        cityFilialStats.forEach((stats, cidade) => {
+            let maxOrders = -1;
+            let bestFilial = null;
+            Object.keys(stats).forEach(filial => {
+                if (stats[filial] > maxOrders) {
+                    maxOrders = stats[filial];
+                    bestFilial = filial;
+                }
+            });
+            if (bestFilial) cityPredominantFilialMap.set(cidade, bestFilial);
+        });
+
+        // 2. Identify Current Supervisor for Branch (Filial -> Supervisor) using Curr Month only
+        const branchSupervisorMap = new Map();
+        // Sort current month sales by date (ascending) so the last one processed is the "latest"
+        salesCurrMonthDataRaw.sort((a, b) => {
+            const dateA = parseDate(a.DTPED) || new Date(0);
+            const dateB = parseDate(b.DTPED) || new Date(0);
+            return dateA - dateB;
+        });
+
+        salesCurrMonthDataRaw.forEach(row => {
+             // Only consider sales from Active Clients (present in clientMap) to determine the real supervisor
+             const codCli = String(row['CODCLI'] || '').trim();
+             if (!clientMap.has(codCli)) return;
+
+             let filial = String(row['FILIAL'] || '').trim();
+             if (filial === '5') filial = '05';
+             if (filial === '8') filial = '08';
+             let supervisor = String(row['SUPERV'] || '').trim();
+
+             if (!filial || !supervisor) return;
+             if (supervisor.toUpperCase() === 'INATIVOS') return; // Ignore Inativos supervisor
+
+             if (supervisor.trim().toUpperCase() === 'OSÉAS SANTOS OL') supervisor = 'OSVALDO NUNES O';
+             const supervisorUpper = (supervisor || '').trim().toUpperCase();
+             if (supervisorUpper === 'BALCAO' || supervisorUpper === 'BALCÃO') return; // Ignore Balcao
+
+             // Update map with latest supervisor found for this branch
+             branchSupervisorMap.set(filial, supervisor);
+        });
+
+
         // Combine Sales for Map Logic
         const allSalesRaw = [...salesPrevYearDataRaw, ...salesCurrYearHistDataRaw, ...salesCurrMonthDataRaw];
 
         self.postMessage({ type: 'progress', status: 'Criando mapa mestre de vendedores...', percentage: 40 });
         const rcaInfoMap = new Map();
+        // Sort all sales by date for RCA owner determination
         allSalesRaw.sort((a, b) => {
             const dateA = parseDate(a.DTPED) || new Date(0);
             const dateB = parseDate(b.DTPED) || new Date(0);
@@ -264,9 +328,30 @@ self.onmessage = async (event) => {
                 }
 
                 const clientData = clientMap.get(originalCodCli);
+
+                // Logic for INACTIVE Clients (Not in clientMap)
                 if (!clientData) {
-                    newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS'; return newSale;
+                    const municipio = String(newSale['MUNICIPIO'] || '').trim().toUpperCase();
+                    const predominantFilial = cityPredominantFilialMap.get(municipio);
+
+                    if (predominantFilial) {
+                        const currentBranchSupervisor = branchSupervisorMap.get(predominantFilial);
+
+                        if (currentBranchSupervisor) {
+                            newSale['CODUSUR'] = `INATIVOS_${predominantFilial}`;
+                            newSale['NOME'] = `INATIVOS ${predominantFilial}`;
+                            newSale['SUPERV'] = currentBranchSupervisor;
+                            // Ensure filial matches the city's logic if missing
+                            if (!newSale['FILIAL']) newSale['FILIAL'] = predominantFilial;
+                            return newSale;
+                        }
+                    }
+
+                    // Fallback if no logic matches
+                    newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS';
+                    return newSale;
                 }
+
                 const rca1 = String(clientData.rca1 || '').trim();
                 if (!rca1 || rca1 === '53') {
                     newSale['CODUSUR'] = 'INATIVO'; newSale['NOME'] = 'Inativo'; newSale['SUPERV'] = 'INATIVOS'; return newSale;
