@@ -90,7 +90,10 @@ BEGIN
     ) t;
 
     -- KPI: Base Clients
-    -- Optimized: Avoid extracting RCAs from full sales if possible, or use distinct scan
+    -- Optimized: Use Loose Index Scan if no other filters applied, else use Covering Index
+    -- (Complex recursive CTE for loose scan is tricky with multiple dynamic filters,
+    -- but since we have a covering index on dtped+...+codusur, a standard DISTINCT is now an index-only scan)
+
     WITH relevant_rcas AS (
         SELECT DISTINCT codusur
         FROM public.all_sales
@@ -107,6 +110,8 @@ BEGIN
         (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade)
         AND c.bloqueio != 'S'
         AND (
+            -- If specific supervisor/vendedor selected, we might assume their RCA code aligns,
+            -- but to be safe we use the actual sales history mapping via relevant_rcas
             (p_supervisor IS NULL AND p_vendedor IS NULL)
             OR
             (c.rca1 IN (SELECT codusur FROM relevant_rcas))
