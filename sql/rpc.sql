@@ -358,13 +358,28 @@ BEGIN
     -- Handle Year/Month parsing
     IF p_ano IS NOT NULL AND p_ano != '' AND p_ano != 'todos' THEN
         v_filter_year := p_ano::int;
+    ELSE
+        -- Default to Current + Previous Year if no year selected (Performance Optimization)
+        SELECT COALESCE(GREATEST(
+            (SELECT MAX(EXTRACT(YEAR FROM dtped))::int FROM public.data_detailed),
+            (SELECT MAX(EXTRACT(YEAR FROM dtped))::int FROM public.data_history)
+        ), EXTRACT(YEAR FROM CURRENT_DATE)::int)
+        INTO v_filter_year;
+
+        -- We set min date to Jan 1st of Previous Year
+        v_min_date := make_date(v_filter_year - 1, 1, 1);
+        -- We set max date to Jan 1st of Next Year (covering current year)
+        v_max_date := make_date(v_filter_year + 1, 1, 1);
+
+        -- Reset v_filter_year to NULL so strictly year-based logic below relies on date ranges
+        v_filter_year := NULL;
     END IF;
     
     IF p_mes IS NOT NULL AND p_mes != '' AND p_mes != 'todos' THEN
         v_filter_month := p_mes::int + 1; -- JS is 0-indexed
     END IF;
 
-    -- Construct optimized date ranges
+    -- Construct optimized date ranges if specific year was selected
     IF v_filter_year IS NOT NULL THEN
         IF v_filter_month IS NOT NULL THEN
              v_min_date := make_date(v_filter_year, v_filter_month, 1);
@@ -376,16 +391,9 @@ BEGIN
     END IF;
 
     -- 1. Supervisors (Exclude p_supervisor)
-    IF (p_filial IS NULL OR p_filial = '') AND (p_cidade IS NULL OR p_cidade = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
-        -- Optimization: No filters active, use Loose Index Scan
-        WITH RECURSIVE t AS (
-            SELECT min(superv) AS val FROM public.all_sales WHERE superv IS NOT NULL
-            UNION ALL
-            SELECT (SELECT min(superv) FROM public.all_sales WHERE superv > t.val AND superv IS NOT NULL)
-            FROM t WHERE t.val IS NOT NULL
-        )
-        SELECT ARRAY_AGG(val ORDER BY val) INTO v_supervisors FROM t WHERE val IS NOT NULL;
-    ELSE
+    -- Optimization Note: We removed the "Loose Index Scan" block because v_min_date is now always set (enforcing date range),
+    -- so we rely on the standard indexed query which is faster than scanning full history.
+    IF TRUE THEN
         SELECT ARRAY_AGG(DISTINCT superv ORDER BY superv) INTO v_supervisors
         FROM public.all_sales
         WHERE
@@ -402,16 +410,7 @@ BEGIN
     END IF;
 
     -- 2. Vendedores (Exclude p_vendedor)
-    IF (p_filial IS NULL OR p_filial = '') AND (p_cidade IS NULL OR p_cidade = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
-        -- Optimization: No filters active, use Loose Index Scan
-        WITH RECURSIVE t AS (
-            SELECT min(nome) AS val FROM public.all_sales WHERE nome IS NOT NULL
-            UNION ALL
-            SELECT (SELECT min(nome) FROM public.all_sales WHERE nome > t.val AND nome IS NOT NULL)
-            FROM t WHERE t.val IS NOT NULL
-        )
-        SELECT ARRAY_AGG(val ORDER BY val) INTO v_vendedores FROM t WHERE val IS NOT NULL;
-    ELSE
+    IF TRUE THEN
         SELECT ARRAY_AGG(DISTINCT nome ORDER BY nome) INTO v_vendedores
         FROM public.all_sales
         WHERE
@@ -448,16 +447,7 @@ BEGIN
     ) t;
 
     -- 4. Cidades (Exclude p_cidade)
-    IF (p_filial IS NULL OR p_filial = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
-        -- Optimization: No filters active, use Loose Index Scan
-        WITH RECURSIVE t AS (
-            SELECT min(cidade) AS val FROM public.all_sales WHERE cidade IS NOT NULL
-            UNION ALL
-            SELECT (SELECT min(cidade) FROM public.all_sales WHERE cidade > t.val AND cidade IS NOT NULL)
-            FROM t WHERE t.val IS NOT NULL
-        )
-        SELECT ARRAY_AGG(val ORDER BY val) INTO v_cidades FROM t WHERE val IS NOT NULL;
-    ELSE
+    IF TRUE THEN
         SELECT ARRAY_AGG(DISTINCT cidade ORDER BY cidade) INTO v_cidades
         FROM public.all_sales
         WHERE
@@ -474,16 +464,7 @@ BEGIN
     END IF;
 
     -- 5. Filiais (Exclude p_filial)
-    IF (p_cidade IS NULL OR p_cidade = '') AND (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') AND (p_fornecedor IS NULL OR p_fornecedor = '') AND v_min_date IS NULL AND v_filter_month IS NULL THEN
-        -- Optimization: No filters active, use Loose Index Scan
-        WITH RECURSIVE t AS (
-            SELECT min(filial) AS val FROM public.all_sales WHERE filial IS NOT NULL
-            UNION ALL
-            SELECT (SELECT min(filial) FROM public.all_sales WHERE filial > t.val AND filial IS NOT NULL)
-            FROM t WHERE t.val IS NOT NULL
-        )
-        SELECT ARRAY_AGG(val ORDER BY val) INTO v_filiais FROM t WHERE val IS NOT NULL;
-    ELSE
+    IF TRUE THEN
         SELECT ARRAY_AGG(DISTINCT filial ORDER BY filial) INTO v_filiais
         FROM public.all_sales
         WHERE
