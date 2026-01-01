@@ -153,8 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Verificando perfil para ID:', user.id);
         
         try {
-            // Check Profile with Timeout - 1s (Modified per user request)
-            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 1000));
+            // Check Profile with Timeout - 10s (Modified per user request)
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique sua internet.')), 10000));
             const profileQuery = supabase.from('profiles').select('status, role').eq('id', user.id).single();
 
             const { data: profile, error } = await Promise.race([profileQuery, timeout]);
@@ -298,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Dashboard Internal Navigation ---
-    clearFiltersBtn.addEventListener('click', () => {
+    clearFiltersBtn.addEventListener('click', async () => {
         supervisorFilter.value = '';
         vendedorFilter.value = '';
         fornecedorFilter.value = '';
@@ -306,6 +306,9 @@ document.addEventListener('DOMContentLoaded', () => {
         filialFilter.value = '';
         anoFilter.value = 'todos';
         mesFilter.value = '';
+
+        // Reload filters to reset dropdown options to full lists
+        await loadFilters(getCurrentFilters());
         loadMainDashboardData();
     });
 
@@ -479,6 +482,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data, error } = await supabase.rpc('get_dashboard_filters', currentFilters);
         if (error) {
             console.error('Error loading filters:', error);
+            // Enhanced error feedback
+            if (error.code === '57014') {
+                 console.error('Filter query timed out. Try refining your selection or check internet connection.');
+            }
             return;
         }
 
