@@ -299,11 +299,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Dashboard Internal Navigation ---
     clearFiltersBtn.addEventListener('click', async () => {
-        supervisorFilter.value = '';
-        vendedorFilter.value = '';
-        fornecedorFilter.value = '';
-        cidadeFilter.value = '';
-        filialFilter.value = '';
+        // Immediately reset UI for better responsiveness
+        const resetSelect = (el) => {
+            el.innerHTML = '<option value="">Todos</option>';
+            el.value = '';
+        };
+        resetSelect(supervisorFilter);
+        resetSelect(vendedorFilter);
+        resetSelect(fornecedorFilter);
+        resetSelect(cidadeFilter);
+        resetSelect(filialFilter);
+
+        anoFilter.innerHTML = '<option value="todos">Todos</option>';
         anoFilter.value = 'todos';
         mesFilter.value = '';
 
@@ -474,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    async function loadFilters(currentFilters) {
+    async function loadFilters(currentFilters, retryCount = 0) {
         // With dependent filters, caching is complex because every combination is unique.
         // For now, we skip cache for filters or cache by key. Given the number of combinations, simplified to fetch fresh.
         // If performance is an issue, we can cache specific common combinations.
@@ -482,9 +489,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data, error } = await supabase.rpc('get_dashboard_filters', currentFilters);
         if (error) {
             console.error('Error loading filters:', error);
-            // Enhanced error feedback
-            if (error.code === '57014') {
-                 console.error('Filter query timed out. Try refining your selection or check internet connection.');
+            // Enhanced error feedback & Retry Logic
+            if (error.code === '57014' || error.message.includes('timeout')) {
+                 console.error('Filter query timed out.');
+                 if (retryCount < 1) {
+                     console.log('Retrying filters load...');
+                     await new Promise(r => setTimeout(r, 1000));
+                     return loadFilters(currentFilters, retryCount + 1);
+                 }
             }
             return;
         }
