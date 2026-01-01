@@ -444,6 +444,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 await clearTable('data_clients');
                 await uploadBatch('data_clients', data.clients);
             }
+
+            // Refresh Cache (Important for performance)
+            updateStatus('Atualizando cache de filtros...', 90);
+            const { error: cacheError } = await supabase.rpc('refresh_dashboard_cache');
+            if (cacheError) {
+                console.error("Cache refresh failed:", cacheError);
+                // Non-fatal, but good to know
+            }
+
         } catch (error) {
             console.error("Upload error:", error);
             throw error;
