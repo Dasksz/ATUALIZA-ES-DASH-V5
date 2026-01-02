@@ -33,6 +33,9 @@ create table if not exists public.data_detailed (
   created_at timestamp with time zone default now()
 );
 
+-- Add column if missing (for existing tables)
+ALTER TABLE public.data_detailed ADD COLUMN IF NOT EXISTS tipovenda text;
+
 -- 2. Tabela de Histórico de Vendas
 create table if not exists public.data_history (
   id uuid default uuid_generate_v4 () primary key,
@@ -64,6 +67,9 @@ create table if not exists public.data_history (
   filial text,
   created_at timestamp with time zone default now()
 );
+
+-- Add column if missing (for existing tables)
+ALTER TABLE public.data_history ADD COLUMN IF NOT EXISTS tipovenda text;
 
 -- 3. Tabela de Clientes
 create table if not exists public.data_clients (
@@ -106,6 +112,7 @@ create index if not exists idx_detailed_cidade on public.data_detailed(cidade);
 create index if not exists idx_detailed_filial on public.data_detailed(filial);
 create index if not exists idx_detailed_codfor on public.data_detailed(codfor);
 create index if not exists idx_detailed_codcli on public.data_detailed(codcli);
+create index if not exists idx_detailed_tipovenda on public.data_detailed(tipovenda);
 
 create index if not exists idx_history_dtped on public.data_history(dtped);
 create index if not exists idx_history_superv on public.data_history(superv);
@@ -114,6 +121,7 @@ create index if not exists idx_history_cidade on public.data_history(cidade);
 create index if not exists idx_history_filial on public.data_history(filial);
 create index if not exists idx_history_codfor on public.data_history(codfor);
 create index if not exists idx_history_codcli on public.data_history(codcli);
+create index if not exists idx_history_tipovenda on public.data_history(tipovenda);
 
 create index if not exists idx_clients_codcli on public.data_clients(codigo_cliente);
 create index if not exists idx_clients_cidade on public.data_clients(cidade);
