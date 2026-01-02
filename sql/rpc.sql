@@ -458,7 +458,7 @@ BEGIN
         )
     INTO v_supervisors, v_vendedores, v_cidades, v_filiais
     FROM public.cache_filters
-    WHERE ano = v_filter_year; -- Use Index on Year
+    WHERE (v_filter_year IS NULL OR ano = v_filter_year); -- FIX: Permite mostrar dados quando ano é nulo (Todos)
 
     -- 5. Fornecedores (From Cache)
     SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor) ORDER BY fornecedor) INTO v_fornecedores
@@ -466,7 +466,7 @@ BEGIN
         SELECT DISTINCT codfor, fornecedor
         FROM public.cache_filters
         WHERE
-            ano = v_filter_year
+            (v_filter_year IS NULL OR ano = v_filter_year)
             AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
             AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
             AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
