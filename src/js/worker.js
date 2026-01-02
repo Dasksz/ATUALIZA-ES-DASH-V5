@@ -305,6 +305,17 @@ self.onmessage = async (event) => {
         }
 
         self.postMessage({ type: 'progress', status: 'Processando e Reatribuindo vendas...', percentage: 50 });
+
+        const americanasBranchCodes = new Map();
+        let nextAmericanasCode = 1001;
+
+        const getAmericanasCode = (filial) => {
+             if (!americanasBranchCodes.has(filial)) {
+                 americanasBranchCodes.set(filial, String(nextAmericanasCode++));
+             }
+             return americanasBranchCodes.get(filial);
+        };
+
         const reattributeSales = (salesData) => {
             const balcaoSpecialClients = new Set(['6421', '7706', '9814', '11405', '9763']);
             return salesData.map(sale => {
@@ -339,22 +350,20 @@ self.onmessage = async (event) => {
                 // Check name in clientData or raw row
                 const rawName = String(newSale['CLIENTE'] || newSale['NOMECLIENTE'] || newSale['RAZAOSOCIAL'] || '').toUpperCase();
                 const clientName = clientData ? clientData.nomeCliente.toUpperCase() : rawName;
+                const isAmericanasVendor = (newSale['NOME'] && newSale['NOME'].toUpperCase().includes('AMERICANAS'));
 
-                if (clientName.includes('AMERICANAS') || clientName.includes('LOJAS AMERICANAS')) {
-                    newSale['CODUSUR'] = '1001';
-                    newSale['NOME'] = 'AMERICANAS';
-                    // Assign Supervisor/Filial from City Map if available
-                    if (mapSupervisor) {
+                if (clientName.includes('AMERICANAS') || clientName.includes('LOJAS AMERICANAS') || isAmericanasVendor) {
+                    if (mapFilial) {
+                        newSale['CODUSUR'] = getAmericanasCode(mapFilial);
+                        newSale['NOME'] = `AMERICANAS ${mapFilial}`;
                         newSale['SUPERV'] = mapSupervisor;
                         newSale['FILIAL'] = mapFilial;
                     } else {
                         // Fallback if map fails (e.g. unknown city)
-                        // Keep original supervisor or set to N/A? 
-                        // Prompt implies "atribuído ao supervisor da cidade". If not found, we leave as is or empty?
-                        // Leaving as is might be safer, or defaulting to current.
-                        // Let's rely on the map. If no map, we don't overwrite Supervisor (or maybe we should?).
-                        // Given the context, we likely want to enforce the map.
-                        if (!newSale['SUPERV']) newSale['SUPERV'] = 'N/A'; 
+                        newSale['CODUSUR'] = '1001';
+                        newSale['NOME'] = 'AMERICANAS';
+                        if (mapSupervisor) newSale['SUPERV'] = mapSupervisor;
+                        else if (!newSale['SUPERV']) newSale['SUPERV'] = 'N/A';
                     }
                     return newSale;
                 }
