@@ -350,7 +350,13 @@ self.onmessage = async (event) => {
                 // Check name in clientData or raw row
                 const rawName = String(newSale['CLIENTE'] || newSale['NOMECLIENTE'] || newSale['RAZAOSOCIAL'] || '').toUpperCase();
                 const clientName = clientData ? clientData.nomeCliente.toUpperCase() : rawName;
-                const isAmericanasVendor = (newSale['NOME'] && newSale['NOME'].toUpperCase().includes('AMERICANAS'));
+                
+                // Check vendor name from current row AND from master map (in case current row has empty name)
+                const rowVendorName = String(newSale['NOME'] || '').toUpperCase();
+                const mappedVendorInfo = rcaInfoMap.get(originalCodUsur);
+                const mappedVendorName = mappedVendorInfo ? String(mappedVendorInfo.NOME || '').toUpperCase() : '';
+                
+                const isAmericanasVendor = rowVendorName.includes('AMERICANAS') || mappedVendorName.includes('AMERICANAS');
 
                 if (clientName.includes('AMERICANAS') || clientName.includes('LOJAS AMERICANAS') || isAmericanasVendor) {
                     if (mapFilial) {
