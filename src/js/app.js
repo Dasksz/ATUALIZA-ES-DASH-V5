@@ -610,15 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
     */
 
     async function loadMainDashboardData() {
-        const filters = {
-            p_filial: filialFilter.value,
-            p_cidade: cidadeFilter.value,
-            p_supervisor: supervisorFilter.value,
-            p_vendedor: vendedorFilter.value,
-            p_fornecedor: fornecedorFilter.value,
-            p_ano: anoFilter.value,
-            p_mes: mesFilter.value
-        };
+        const filters = getCurrentFilters();
 
         // Cache Key based on filters (simple stringify)
         const cacheKey = `dashboard_data_${JSON.stringify(filters)}`;
@@ -804,15 +796,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadCityView() {
-        const filters = {
-            p_filial: filialFilter.value,
-            p_cidade: cidadeFilter.value,
-            p_supervisor: supervisorFilter.value,
-            p_vendedor: vendedorFilter.value,
-            p_fornecedor: fornecedorFilter.value,
-            p_ano: anoFilter.value,
-            p_mes: mesFilter.value
-        };
+        const filters = getCurrentFilters();
 
         const { data, error } = await supabase.rpc('get_city_view_data', filters);
         if(error) { console.error(error); return; }
