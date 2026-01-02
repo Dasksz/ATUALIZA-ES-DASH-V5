@@ -139,7 +139,8 @@ const processSalesData = (rawData, clientMap, productMasterMap) => {
             filial: filialValue,
             codsupervisor: String(rawRow['CODSUPERVISOR'] || '').trim(),
             estoqueunit: parseBrazilianNumber(rawRow['ESTOQUEUNIT']),
-            qtvenda_embalagem_master: isNaN(qtdeMaster) || qtdeMaster === 0 ? 0 : qtVenda / qtdeMaster
+            qtvenda_embalagem_master: qtVenda / qtdeMaster,
+            tipovenda: String(rawRow['TIPOVENDA'] || '').trim()
         };
     });
 };

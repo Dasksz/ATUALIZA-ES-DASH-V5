@@ -480,13 +480,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getCurrentFilters() {
         return {
-            p_filial: filialFilter.value,
-            p_cidade: cidadeFilter.value,
-            p_supervisor: supervisorFilter.value,
-            p_vendedor: vendedorFilter.value,
-            p_fornecedor: fornecedorFilter.value,
+            p_filial: getSelectedValues(filialFilter),
+            p_cidade: getSelectedValues(cidadeFilter),
+            p_supervisor: getSelectedValues(supervisorFilter),
+            p_vendedor: getSelectedValues(vendedorFilter),
+            p_fornecedor: getSelectedValues(fornecedorFilter),
             p_ano: anoFilter.value,
-            p_mes: mesFilter.value
+            p_mes: mesFilter.value,
+            p_tipovenda: getSelectedValues(document.getElementById('tipovenda-filter'))
         };
     }
 
@@ -516,9 +517,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyFiltersData(data) {
         // Helper to preserve selection
         const updateSelect = (element, items, isObject = false) => {
-            const currentVal = element.value;
-            element.innerHTML = '<option value="">Todos</option>';
-            if (element.id === 'ano-filter') element.options[0].value = 'todos';
+            // Determine if element is multiple select
+            const isMultiple = element.hasAttribute('multiple');
+            let currentValues = [];
+            if (isMultiple) {
+                currentValues = getSelectedValues(element);
+            } else {
+                currentValues = [element.value];
+            }
+
+            element.innerHTML = '';
+
+            const allOpt = document.createElement('option');
+            allOpt.value = (element.id === 'ano-filter') ? 'todos' : '';
+            allOpt.textContent = 'Todos';
+            element.appendChild(allOpt);
 
             if (items) {
                 items.forEach(item => {
@@ -533,21 +546,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     element.appendChild(opt);
                 });
             }
-            // Restore selection if it still exists in the new list
-            // Note: If the currentVal is not in the new list (e.g. invalid for current filters),
-            // it naturally falls back to first option or empty, which is correct behavior for dependent filters.
-            // BUT, since we "exclude self" in the backend query, the current value SHOULD be in the list if it's valid.
-            if (currentVal) {
-                // Check if option exists
-                const exists = Array.from(element.options).some(o => o.value === currentVal);
-                if (exists) {
-                    element.value = currentVal;
-                } else {
-                    // If it doesn't exist, it means the current selection is invalid under other filters.
-                    // Ideally we should clear it, but the browser does that automatically if we don't set it.
-                    // However, we must ensure 'loadMainDashboardData' sees the change if we want it to auto-refresh data.
-                    // For now, let's just let it clear.
-                    element.value = (element.id === 'ano-filter' && !items.includes(currentVal)) ? 'todos' : '';
+
+            // Restore selections
+            if (currentValues.length > 0) {
+                let hasSelection = false;
+                Array.from(element.options).forEach(opt => {
+                    if (currentValues.includes(opt.value)) {
+                        opt.selected = true;
+                        hasSelection = true;
+                    }
+                });
+                // If previously "todos" was selected explicitly (like in Ano), ensure it stays if valid
+                if (!hasSelection && currentValues.includes('todos')) {
+                     if (element.options.length > 0) element.options[0].selected = true;
                 }
             }
         };

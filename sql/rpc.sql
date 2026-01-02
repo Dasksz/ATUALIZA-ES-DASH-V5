@@ -14,13 +14,14 @@ $$;
 -- Function: Get Main Dashboard Data
 -- Function: Get Main Dashboard Data (Optimized)
 CREATE OR REPLACE FUNCTION get_main_dashboard_data(
-    p_filial text default null,
-    p_cidade text default null,
-    p_supervisor text default null,
-    p_vendedor text default null,
-    p_fornecedor text default null,
+    p_filial text[] default null,
+    p_cidade text[] default null,
+    p_supervisor text[] default null,
+    p_vendedor text[] default null,
+    p_fornecedor text[] default null,
     p_ano text default null,
-    p_mes text default null
+    p_mes text default null,
+    p_tipovenda text[] default null
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -86,22 +87,15 @@ BEGIN
             SUM(totpesoliq) as peso,
             SUM(vlbonific) as bonificacao,
             SUM(COALESCE(vldevolucao,0)) as devolucao,
-            -- For distinct count across tables, we can't just sum, but for high-level dashboard 'positivacao',
-            -- summing unique counts per table is an approximation if clients don't cross tables often in same month.
-            -- However, to be accurate we need distinct codcli.
-            -- So we select distinct codcli per month first? No that is too slow.
-            -- Let's stick to 'positivacao' calculation approximation: sum of counts (Assuming data_detailed and data_history don't overlap in time significantly).
-            -- Actually, usually they don't overlap in time (history is old, detailed is new).
-            -- If they do overlap, we might double count.
-            -- But typically history is past years, detailed is current.
-            COUNT(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as positivacao
+            COUNT(DISTINCT CASE WHEN (vlvenda + COALESCE(vlbonific,0)) > 0 THEN codcli END) as positivacao
         FROM public.data_detailed
         WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+          AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+          AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+          AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+          AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
         GROUP BY 1, 2
     ),
     history_agg AS (
@@ -112,14 +106,15 @@ BEGIN
             SUM(totpesoliq) as peso,
             SUM(vlbonific) as bonificacao,
             SUM(COALESCE(vldevolucao,0)) as devolucao,
-            COUNT(DISTINCT CASE WHEN (vlvenda - COALESCE(vldevolucao,0)) > 1 THEN codcli END) as positivacao
+            COUNT(DISTINCT CASE WHEN (vlvenda + COALESCE(vlbonific,0)) > 0 THEN codcli END) as positivacao
         FROM public.data_history
         WHERE dtped >= v_start_date_prev AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+          AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+          AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+          AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+          AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
         GROUP BY 1, 2
     ),
     combined_agg AS (
@@ -142,25 +137,27 @@ BEGIN
              FROM public.data_detailed
              WHERE dtped >= make_date(v_current_year, v_target_month, 1)
                AND dtped <  (make_date(v_current_year, v_target_month, 1) + interval '1 month')
-               AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-               AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-               AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-               AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-               AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+               AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+               AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+               AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+               AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+               AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+               AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
              GROUP BY codcli
-             HAVING (SUM(vlvenda) - SUM(COALESCE(vldevolucao, 0))) > 1
+             HAVING (SUM(vlvenda) + SUM(COALESCE(vlbonific, 0))) > 0
              UNION
              SELECT codcli
              FROM public.data_history
              WHERE dtped >= make_date(v_current_year, v_target_month, 1)
                AND dtped <  (make_date(v_current_year, v_target_month, 1) + interval '1 month')
-               AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-               AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-               AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-               AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-               AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+               AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+               AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+               AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+               AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+               AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+               AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
              GROUP BY codcli
-             HAVING (SUM(vlvenda) - SUM(COALESCE(vldevolucao, 0))) > 1
+             HAVING (SUM(vlvenda) + SUM(COALESCE(vlbonific, 0))) > 0
         ) t
     ),
     -- 6. KPI: Base Clients (Optimized - Avoid scanning full sales if possible)
@@ -168,28 +165,30 @@ BEGIN
         SELECT DISTINCT codusur
         FROM public.data_detailed
         WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+          AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+          AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+          AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+          AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
         UNION
         SELECT DISTINCT codusur
         FROM public.data_history
         WHERE dtped >= v_start_date_curr AND dtped < v_end_date_curr
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+          AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+          AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+          AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+          AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
     )
     SELECT
         (SELECT val FROM kpi_active_clients),
         CASE 
-            WHEN (p_supervisor IS NULL OR p_supervisor = '') AND (p_vendedor IS NULL OR p_vendedor = '') THEN
-                (SELECT COUNT(*) FROM public.data_clients c WHERE c.bloqueio != 'S' AND (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade))
+            WHEN (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL) AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL) THEN
+                (SELECT COUNT(*) FROM public.data_clients c WHERE c.bloqueio != 'S' AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR c.cidade = ANY(p_cidade)))
             ELSE
-                (SELECT COUNT(*) FROM public.data_clients c WHERE (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade) AND c.bloqueio != 'S' AND c.rca1 IN (SELECT codusur FROM relevant_rcas))
+                (SELECT COUNT(*) FROM public.data_clients c WHERE (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR c.cidade = ANY(p_cidade)) AND c.bloqueio != 'S' AND c.rca1 IN (SELECT codusur FROM relevant_rcas))
         END,
         COALESCE(json_agg(json_build_object(
             'month_index', mth - 1,
@@ -228,13 +227,14 @@ $$;
 -- Function: Get City View Data
 -- Function: Get City View Data (Optimized)
 CREATE OR REPLACE FUNCTION get_city_view_data(
-    p_filial text default null,
-    p_cidade text default null,
-    p_supervisor text default null,
-    p_vendedor text default null,
-    p_fornecedor text default null,
+    p_filial text[] default null,
+    p_cidade text[] default null,
+    p_supervisor text[] default null,
+    p_vendedor text[] default null,
+    p_fornecedor text[] default null,
     p_ano text default null,
-    p_mes text default null
+    p_mes text default null,
+    p_tipovenda text[] default null
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -278,11 +278,12 @@ BEGIN
         SELECT codcli, SUM(vlvenda) as total_fat
         FROM public.all_sales
         WHERE dtped >= v_start_date AND dtped < v_end_date
-          AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-          AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-          AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+          AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+          AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+          AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+          AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
         GROUP BY codcli
         HAVING SUM(vlvenda) > 0
     )
@@ -308,8 +309,8 @@ BEGIN
         FROM public.all_sales s
         WHERE dtped >= make_date(v_current_year, 1, 1) -- Assuming inactivity is relevant for current year context
           AND dtped < make_date(v_current_year + 1, 1, 1)
-          AND (p_supervisor IS NULL OR p_supervisor = '' OR s.superv = p_supervisor)
-          AND (p_vendedor IS NULL OR p_vendedor = '' OR s.nome = p_vendedor)
+          AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR s.superv = ANY(p_supervisor))
+          AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR s.nome = ANY(p_vendedor))
     )
     SELECT json_agg(
         json_build_object(
@@ -325,9 +326,9 @@ BEGIN
     ) INTO v_inactive_clients
     FROM public.data_clients c
     WHERE c.bloqueio != 'S'
-      AND (p_cidade IS NULL OR p_cidade = '' OR c.cidade = p_cidade)
+      AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR c.cidade = ANY(p_cidade))
       AND (
-          (p_supervisor IS NULL AND p_vendedor IS NULL)
+          (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL) AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL)
           OR
           (c.rca1 IN (SELECT codusur FROM relevant_rcas))
       )
@@ -339,11 +340,12 @@ BEGIN
           WHERE s2.codcli = c.codigo_cliente
             AND s2.dtped >= v_start_date AND s2.dtped < v_end_date
             -- Re-apply filters to ensure we exclude clients who bought in this filtered view
-            AND (p_filial IS NULL OR p_filial = '' OR s2.filial = p_filial)
-            AND (p_cidade IS NULL OR p_cidade = '' OR s2.cidade = p_cidade)
-            AND (p_supervisor IS NULL OR p_supervisor = '' OR s2.superv = p_supervisor)
-            AND (p_vendedor IS NULL OR p_vendedor = '' OR s2.nome = p_vendedor)
-            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR s2.codfor = p_fornecedor)
+            AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR s2.filial = ANY(p_filial))
+            AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR s2.cidade = ANY(p_cidade))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR s2.superv = ANY(p_supervisor))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR s2.nome = ANY(p_vendedor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR s2.codfor = ANY(p_fornecedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR s2.tipovenda = ANY(p_tipovenda))
       );
 
     v_result := json_build_object(
@@ -357,13 +359,14 @@ $$;
 
 -- Function: Get Filters (Populate Dropdowns)
 CREATE OR REPLACE FUNCTION get_dashboard_filters(
-    p_filial text default null,
-    p_cidade text default null,
-    p_supervisor text default null,
-    p_vendedor text default null,
-    p_fornecedor text default null,
+    p_filial text[] default null,
+    p_cidade text[] default null,
+    p_supervisor text[] default null,
+    p_vendedor text[] default null,
+    p_fornecedor text[] default null,
     p_ano text default null,
-    p_mes text default null
+    p_mes text default null,
+    p_tipovenda text[] default null
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -375,6 +378,7 @@ DECLARE
     v_cidades text[];
     v_filiais text[];
     v_anos int[];
+    v_tipos_venda text[];
     
     -- Helper variables for date filtering
     v_filter_year int;
@@ -426,64 +430,79 @@ BEGIN
     SELECT
         -- 1. Supervisors
         ARRAY_AGG(DISTINCT superv ORDER BY superv) FILTER (WHERE 
-            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+            AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
             AND (v_filter_month IS NULL OR mes = v_filter_month)
         ),
         -- 2. Vendedores
         ARRAY_AGG(DISTINCT nome ORDER BY nome) FILTER (WHERE
-            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+            AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
             AND (v_filter_month IS NULL OR mes = v_filter_month)
         ),
         -- 3. Cidades
         ARRAY_AGG(DISTINCT cidade ORDER BY cidade) FILTER (WHERE
-            (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
             AND (v_filter_month IS NULL OR mes = v_filter_month)
         ),
         -- 4. Filiais
         ARRAY_AGG(DISTINCT filial ORDER BY filial) FILTER (WHERE
-            (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-            AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+            (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
+            AND (v_filter_month IS NULL OR mes = v_filter_month)
+        ),
+        -- 5. Tipos de Venda
+        ARRAY_AGG(DISTINCT tipovenda ORDER BY tipovenda) FILTER (WHERE
+            (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+            AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+            AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
             AND (v_filter_month IS NULL OR mes = v_filter_month)
         )
-    INTO v_supervisors, v_vendedores, v_cidades, v_filiais
+    INTO v_supervisors, v_vendedores, v_cidades, v_filiais, v_tipos_venda
     FROM public.cache_filters
-    WHERE (v_filter_year IS NULL OR ano = v_filter_year); -- FIX: Permite mostrar dados quando ano é nulo (Todos)
+    WHERE (v_filter_year IS NULL OR ano = v_filter_year);
 
-    -- 5. Fornecedores (From Cache)
+    -- 6. Fornecedores (From Cache)
     SELECT json_agg(json_build_object('cod', codfor, 'name', fornecedor) ORDER BY fornecedor) INTO v_fornecedores
     FROM (
         SELECT DISTINCT codfor, fornecedor
         FROM public.cache_filters
         WHERE
             (v_filter_year IS NULL OR ano = v_filter_year)
-            AND (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-            AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-            AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-            AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
+            AND (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+            AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+            AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+            AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+            AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
             AND (v_filter_month IS NULL OR mes = v_filter_month)
             AND codfor IS NOT NULL
     ) t;
 
-    -- 6. Anos (From Cache - very fast distinct scan)
+    -- 7. Anos (From Cache - very fast distinct scan)
     SELECT ARRAY_AGG(DISTINCT ano ORDER BY ano DESC) INTO v_anos
     FROM public.cache_filters
     WHERE
-        (p_filial IS NULL OR p_filial = '' OR filial = p_filial)
-        AND (p_cidade IS NULL OR p_cidade = '' OR cidade = p_cidade)
-        AND (p_supervisor IS NULL OR p_supervisor = '' OR superv = p_supervisor)
-        AND (p_vendedor IS NULL OR p_vendedor = '' OR nome = p_vendedor)
-        AND (p_fornecedor IS NULL OR p_fornecedor = '' OR codfor = p_fornecedor)
+        (p_filial IS NULL OR array_length(p_filial, 1) IS NULL OR filial = ANY(p_filial))
+        AND (p_cidade IS NULL OR array_length(p_cidade, 1) IS NULL OR cidade = ANY(p_cidade))
+        AND (p_supervisor IS NULL OR array_length(p_supervisor, 1) IS NULL OR superv = ANY(p_supervisor))
+        AND (p_vendedor IS NULL OR array_length(p_vendedor, 1) IS NULL OR nome = ANY(p_vendedor))
+        AND (p_fornecedor IS NULL OR array_length(p_fornecedor, 1) IS NULL OR codfor = ANY(p_fornecedor))
+        AND (p_tipovenda IS NULL OR array_length(p_tipovenda, 1) IS NULL OR tipovenda = ANY(p_tipovenda))
         AND (v_filter_month IS NULL OR mes = v_filter_month);
 
     RETURN json_build_object(
@@ -492,7 +511,8 @@ BEGIN
         'fornecedores', COALESCE(v_fornecedores, '[]'::json),
         'cidades', COALESCE(v_cidades, '{}'),
         'filiais', COALESCE(v_filiais, '{}'),
-        'anos', COALESCE(v_anos, '{}')
+        'anos', COALESCE(v_anos, '{}'),
+        'tipos_venda', COALESCE(v_tipos_venda, '{}')
     );
 END;
 $$;

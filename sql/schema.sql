@@ -28,6 +28,7 @@ create table if not exists public.data_detailed (
   posicao text,
   estoqueunit numeric,
   qtvenda_embalagem_master numeric,
+  tipovenda text,
   filial text,
   created_at timestamp with time zone default now()
 );
